@@ -1,0 +1,142 @@
+//   Copyright Naoki Shibata and contributors 2010 - 2020.
+// Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE.txt or copy at
+//          http://www.boost.org/LICENSE_1_0.txt)
+
+#ifndef __SLEEFQUAD_H__
+#define __SLEEFQUAD_H__
+
+#include "sleef.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#if (defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN__) || defined(_MSC_VER)) && !defined(SLEEF_STATIC_LIBS)
+#ifdef IMPORT_IS_EXPORT
+#define IMPORT __declspec(dllexport)
+#else // #ifdef IMPORT_IS_EXPORT
+#define IMPORT __declspec(dllimport)
+#if (defined(_MSC_VER))
+#pragma comment(lib,"sleefquad.lib")
+#endif // #if (defined(_MSC_VER))
+#endif // #ifdef IMPORT_IS_EXPORT
+#else // #if (defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN__) || defined(_MSC_VER)) && !defined(SLEEF_STATIC_LIBS)
+#define IMPORT
+#endif // #if (defined(__MINGW32__) || defined(__MINGW64__) || defined(__CYGWIN__) || defined(_MSC_VER)) && !defined(SLEEF_STATIC_LIBS)
+
+//
+
+#if !defined(Sleef_quadx1_DEFINED)
+#define Sleef_quadx1_DEFINED
+typedef struct {
+  uint64_t x, y;
+} Sleef_quadx1;
+#endif
+
+#if !defined(Sleef_quadx2_DEFINED)
+
+#if defined(__SSE2__)
+#define Sleef_quadx2_DEFINED
+typedef struct {
+  __m128i x, y;
+} Sleef_quadx2;
+#endif
+
+#if defined(__aarch64__)
+#define Sleef_quadx2_DEFINED
+typedef struct {
+  uint32x4_t x, y;
+} Sleef_quadx2;
+#endif
+
+#if defined(__VSX__)
+#define Sleef_quadx2_DEFINED
+typedef struct {
+  __vector unsigned int x, y;
+} Sleef_quadx2;
+#endif
+
+#if defined(__VX__) && (defined(__VECTOR_KEYWORD_SUPPORTED__) || defined(__VEC__))
+#define Sleef_quadx2_DEFINED
+typedef struct {
+  __vector unsigned long long x, y;
+} Sleef_quadx2;
+#endif
+
+#endif // #if !defined(Sleef_quadx2_DEFINED)
+
+#if !defined(Sleef_quadx4_DEFINED)
+#if defined(__AVX__)
+#define Sleef_quadx4_DEFINED
+typedef struct {
+  __m256i x, y;
+} Sleef_quadx4;
+#endif
+#endif
+
+#if !defined(Sleef_quadx8_DEFINED)
+#if defined(__AVX512F__)
+#define Sleef_quadx8_DEFINED
+typedef struct {
+  __m512i x, y;
+} Sleef_quadx8;
+#endif
+#endif
+
+
+#if !defined(Sleef_svquad_DEFINED)
+#if defined(__ARM_FEATURE_SVE)
+#define Sleef_svquad_DEFINED
+typedef svfloat64x2_t Sleef_svquad;
+#endif
+#endif
+
+//
+
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define SLEEF_Q(H, L, E) (						\
+      (union {								\
+	struct {							\
+	  uint64_t h, l;						\
+	};								\
+	Sleef_quad q;							\
+      }) {								\
+        .h = (((int64_t)(H) < 0 ? 1ULL : 0ULL) << 63) |			\
+             ((0x7fff & (uint64_t)((E) + 16383)) << 48) |		\
+	     ((int64_t)(H) < 0 ? -(int64_t)(H) : (int64_t)(H) & 0xffffffffffffULL), \
+	.l = (uint64_t)(L)}.q)
+#else
+#define SLEEF_Q(H, L, E) (						\
+      (union {								\
+	struct {							\
+	  uint64_t l, h;						\
+	};								\
+	Sleef_quad q;							\
+      }) {								\
+        .h = (((int64_t)(H) < 0 ? 1ULL : 0ULL) << 63) |			\
+             ((0x7fff & (uint64_t)((E) + 16383)) << 48) |		\
+	     ((int64_t)(H) < 0 ? -(int64_t)(H) : (int64_t)(H) & 0xffffffffffffULL), \
+	.l = (uint64_t)(L)}.q)
+#endif
+
+//
+
+#include <stdio.h>
+#include <stdarg.h>
+
+IMPORT Sleef_quad Sleef_strtoq(const char *str, char **endptr);
+
+IMPORT int Sleef_fprintf(FILE *fp, const char *fmt, ...);
+IMPORT int Sleef_vfprintf(FILE *fp, const char *fmt, va_list ap);
+IMPORT int Sleef_printf(const char *fmt, ...);
+IMPORT int Sleef_vprintf(const char *fmt, va_list ap);
+IMPORT int Sleef_snprintf(char *str, size_t size, const char *fmt, ...);
+IMPORT int Sleef_vsnprintf(char *str, size_t size, const char *fmt, va_list ap);
+
+IMPORT int Sleef_registerPrintfHook();
+IMPORT void Sleef_unregisterPrintfHook();
+
+//
+
