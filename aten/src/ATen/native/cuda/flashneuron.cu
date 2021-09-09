@@ -371,9 +371,11 @@ void FN_memory::p2p_malloc(void** gpu_ptr, size_t size) {
 
   if (reqBlk == 0) return;
 
+/*
   if (isDebug) {
     std::cout << "p2p malloc size test sampling: " << (double)size / 1024 / 1024 << std::endl;
   }
+*/
 
   p2pStartBlk = &p2pBlk_0_4;
   p2pMaxBlk = max_p2p;

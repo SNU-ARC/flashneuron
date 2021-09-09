@@ -856,6 +856,9 @@ auto Engine::execute(const edge_list& roots,
   FlashNeuronEngine::joinOffload();
   c10::cuda::CUDACachingAllocator::emptyCache();
 
+  if (at::globalContext().FNGlobal.isDebugMode())
+    std::cout << "================Forward end: " << at::globalContext().FNGlobal.curBackNum() << " ===================" << std::endl;
+
   if (!at::globalContext().FNGlobal.isOnDemand()) {
     at::native::fn_memorymanager.pref_it = at::globalContext().FNGlobal.getBackPath();
     at::native::fn_memorymanager.pref_end = at::globalContext().FNGlobal.getLastIdx();

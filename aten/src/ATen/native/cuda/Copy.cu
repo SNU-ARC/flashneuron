@@ -36,19 +36,34 @@ namespace native {
 
 using namespace at::cuda;
 
-__global__ void half_scale(float *din, __half *dout, int dsize) {
+__global__ void double_to_half(double *din, __half *dout, int dsize) {
+  int idx = threadIdx.x + blockDim.x * blockIdx.x;
+  if (idx < dsize)  dout[idx] = __double2half(din[idx]);
+}
+
+__global__ void float_to_half(float *din, __half *dout, int dsize) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
   if (idx < dsize)  dout[idx] = __float2half(din[idx]);
 }
 
-__global__ void float_scale(__half *din, float *dout, int dsize) {
+__global__ void half_to_double(__half *din, double *dout, int dsize) {
+  int idx = threadIdx.x + blockDim.x * blockIdx.x;
+  if (idx < dsize)  dout[idx] = (double)__half2float(din[idx]);
+}
+
+__global__ void half_to_float(__half *din, float *dout, int dsize) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
   if (idx < dsize)  dout[idx] = __half2float(din[idx]);
 }
 
-__global__ void double_scale(__half *din, double *dout, int dsize) {
+__global__ void zero_mask_double(double *din, unsigned int *bit, unsigned int *pos, int dsize) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
-  if (idx < dsize)  dout[idx] = (double)__half2float(din[idx]);
+  if (idx < dsize) {
+    if (din[idx] != 0.0f) {
+      atomicAdd(&bit[find(idx)], mask(idx));
+      atomicAdd(&pos[(unsigned int)(idx / 32)], 1);
+    }
+  }
 }
 
 __global__ void zero_mask(float *din, unsigned int *bit, unsigned int *pos, int dsize) {
@@ -100,7 +115,7 @@ __global__ void pos_second(unsigned int* pos, unsigned int* opos, int asize) {
   }
 }
 
-__global__ void zero_insert_double(unsigned int *bit, unsigned int *nz_pos, float* din, double *dout, int dsize) {
+__global__ void zero_insert_double(unsigned int *bit, unsigned int *nz_pos, double* din, double *dout, int dsize) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
   if (idx < dsize) {
     int count = -1;
@@ -419,8 +434,18 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
 
   if (kind == cudaMemcpyDeviceToHost) {
     if (iter.element_size(0) >= 4) {
+      void *bit, *pos;
+
+      void *csr_result;
+      void *fp_result;
+
+      int resize = iter.numel();
+      fn_memorymanager.set_numel(tid, iter.numel());
+
+      fn_memorymanager.p2p_malloc((void **)&csr_result, iter.numel() * iter.element_size(0));
+      cudaMemsetAsync((void *)csr_result, 0, iter.numel() * iter.element_size(0), stream);
+
       if (csr_flag && is_csr) {
-        void *fp16, *bit, *pos;
         fn_memorymanager.p2p_malloc(&bit, sizeof(unsigned int) * bit_elements);
         fn_memorymanager.p2p_malloc(&pos, sizeof(unsigned int) * pos_elements);
 
@@ -434,119 +459,86 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
         cudaMemsetAsync((void *)pos, 0, sizeof(unsigned int) * pos_elements, stream);
         cudaMemsetAsync((void *)nz_pos, 0, sizeof(unsigned int) * pos_elements, stream);
 
-        void *nz_src;
-        if (iter.element_size(0) == 8) {
-          fn_memorymanager.p2p_malloc((void **)&nz_src, iter.numel() * sizeof(double));
-          cudaMemsetAsync((void *)nz_src, 0, sizeof(double) * iter.numel(), stream);
-          thrust::device_ptr<double> dA_V((double *)src);
-          thrust::device_ptr<double> dA_R((double *)nz_src);
-          thrust::copy_if(dA_V, dA_V + iter.numel(), dA_R, is_not_zero_double());
-        } else {
-          fn_memorymanager.p2p_malloc((void **)&nz_src, iter.numel() * sizeof(float));
-          cudaMemsetAsync((void *)nz_src, 0, sizeof(float) * iter.numel(), stream);
-          thrust::device_ptr<float> dA_V((float *)src);
-          thrust::device_ptr<float> dA_R((float *)nz_src);
-          thrust::copy_if(dA_V, dA_V + iter.numel(), dA_R, is_not_zero());
-        }
 
-        zero_mask<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)src, (unsigned int *)bit, nz_pos, iter.numel());
+        if (iter.element_size(0) == 8) {
+          thrust::device_ptr<double> dA_V((double *)src);
+          thrust::device_ptr<double> dA_R((double *)csr_result);
+          thrust::copy_if(dA_V, dA_V + iter.numel(), dA_R, is_not_zero_double());
+
+          zero_mask_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((double *)src, (unsigned int *)bit, nz_pos, iter.numel());
+        } else {
+          thrust::device_ptr<float> dA_V((float *)src);
+          thrust::device_ptr<float> dA_R((float *)csr_result);
+          thrust::copy_if(dA_V, dA_V + iter.numel(), dA_R, is_not_zero());
+
+          zero_mask<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)src, (unsigned int *)bit, nz_pos, iter.numel());
+        }
 
         pos_first<<<nblocks, nthreads, 0, stream>>>(nz_pos, pos_elements);
         pos_second<<<nblocks, nthreads, 0, stream>>>(nz_pos, (unsigned int*)pos, pos_elements);
 
-        int resize = 0;
-
         cudaMemcpyAsync((void *)&resize, (void *)((size_t)pos + sizeof(unsigned int) * (pos_elements - 1)),
             sizeof(int), cudaMemcpyDeviceToHost, stream);
-
-        fn_memorymanager.p2p_malloc(&fp16, sizeof(__half) * resize);
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-
-        half_scale<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)nz_src, (__half *)fp16, resize);
-
-        fn_memorymanager.set_resize(tid, resize);
-        fn_memorymanager.set_numel(tid, iter.numel());
-
-        if (true == ssd_flag) {
-/*
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)(resize * sizeof(__half));
-*/
-        } else {
-          AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp16, resize * sizeof(__half), kind, stream));
-
-          fn_memorymanager.p2p_free(fp16, resize * sizeof(__half));
-          fn_memorymanager.event_arr_d2h[tid] = false;
-        }
+        fn_memorymanager.set_resize(tid, resize); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
 
         fn_memorymanager.p2p_free((void *)nz_pos, pos_elements * sizeof(unsigned int));
-        fn_memorymanager.p2p_free((void *)nz_src, iter.numel() * sizeof(float));
-      } else if (fp16_flag) {
-        // this case include both cases
-        // 1. csr_flag==true && is_csr==false (csr_flag==true always guarantee fp16_flag==true)
-        // 2. csr_flag==false && fp16_flag==true
+      } else {
+        fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
 
+        cudaMemcpyAsync((void *)csr_result, (void *)src, iter.numel() * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
+      }
+
+      if (fp16_flag) {
         // keep print message for debug purpose
-        void *fp16;
-        fn_memorymanager.p2p_malloc(&fp16, sizeof(__half) * iter.numel());
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
+        fn_memorymanager.p2p_malloc(&fp_result, sizeof(__half) * resize);
+        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
 
-        half_scale<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)src, (__half *)fp16, iter.numel());
-
-        fn_memorymanager.set_resize(tid, 0); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-        fn_memorymanager.set_numel(tid, iter.numel());
-
-        if (true == ssd_flag) {
-/*
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)(iter.numel() * sizeof(__half));
-*/
+        if (iter.element_size(0) == 8) {
+          double_to_half<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((double *)csr_result, (__half *)fp_result, resize);
         } else {
-
-          AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp16, sizeof(__half) * iter.numel(), kind, stream));
-
-          fn_memorymanager.p2p_free(fp16, iter.numel() * sizeof(__half));
-          fn_memorymanager.event_arr_d2h[tid] = false;
+          float_to_half<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)csr_result, (__half *)fp_result, resize);
         }
-      } else { // false == csr_flag && false == fp16_flag
-        if (true == ssd_flag) {
-/*
-          // TODO Need to malloc src ptr to BAR attached region
-          void *fp16;
-          fn_memorymanager.p2p_malloc(&fp16, nbytes);
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-          fn_memorymanager.set_numel(tid, (size_t)nbytes);
-          fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-          AT_CUDA_CHECK(cudaMemcpyAsync(fp16, src, nbytes, cudaMemcpyDeviceToDevice, stream));
 
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)nbytes;
-*/
+        fn_memorymanager.set_resize(tid, resize); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
+      } else {
+        fn_memorymanager.p2p_malloc(&fp_result, resize * iter.element_size(0));
+        cudaMemcpyAsync((void *)fp_result, (void *)csr_result, resize * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
+
+        fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
+        // fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
+        fn_memorymanager.set_numel(tid, nbytes);
+      }
+
+      fn_memorymanager.p2p_free((void *)csr_result, iter.numel() * iter.element_size(0));
+
+      if (true == ssd_flag) {
+        p2p_addr = (uint64_t)fp_result;
+        p2p_size = (uint64_t)(iter.numel() * sizeof(__half));
+      } else {
+        if (fp16_flag) {
+          AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp_result, resize * sizeof(__half), kind, stream));
+          fn_memorymanager.p2p_free(fp_result, resize * sizeof(__half));
         } else {
-
-          fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-          fn_memorymanager.set_numel(tid, iter.numel());
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
-
-          AT_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, kind, stream));
-
-          fn_memorymanager.event_arr_d2h[tid] = false;
+          AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp_result, resize * iter.element_size(0), kind, stream));
+          fn_memorymanager.p2p_free(fp_result, resize * iter.element_size(0));
         }
+
+        fn_memorymanager.event_arr_d2h[tid] = false;
       }
     } else { // Non double or float
       if (true == ssd_flag) {
-/*
         // TODO Need to malloc src ptr to BAR attached region
-        void *fp16;
-        fn_memorymanager.p2p_malloc(&fp16, nbytes);
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
+        void *fp_result;
+        fn_memorymanager.p2p_malloc(&fp_result, nbytes);
+        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
         fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
         fn_memorymanager.set_numel(tid, (size_t)nbytes);
-        AT_CUDA_CHECK(cudaMemcpyAsync(fp16, src, nbytes, cudaMemcpyDeviceToDevice, stream));
 
-        p2p_addr = (uint64_t)fp16;
+        AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, nbytes, cudaMemcpyDeviceToDevice, stream));
+
+        p2p_addr = (uint64_t)fp_result;
         p2p_size = (uint64_t)nbytes;
-*/
+
       } else {
         fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
         fn_memorymanager.set_numel(tid, iter.numel());
@@ -560,107 +552,78 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
   }
 
   if (kind == cudaMemcpyHostToDevice) {
-    if (iter.element_size(0) >= 4) {
-      if (csr_flag && is_csr) {
-        void* bit = fn_memorymanager.get_bit_addr(tid);
-        void* pos = fn_memorymanager.get_pos_addr(tid);
+    int resize = fn_memorymanager.get_resize(tid);
 
-        int resize = fn_memorymanager.get_resize(tid);
+    void *fp_src = NULL;
+    void *fp_result = NULL;
+    void *csr_result = NULL;
 
-        void* fp16;
-        fn_memorymanager.p2p_malloc(&fp16, sizeof(__half) * resize);
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-
-        if (ssd_flag) {
+    if (ssd_flag) {
+      if (iter.element_size(0) >= 4) {
 /*
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)(resize * sizeof(__half));
-          // [JS] all backend job will be called at Arcp2pCompletion
+        fn_memorymanager.p2p_malloc(&fp_result, resize * sizeof(__half));
+        p2p_size = (uint64_t)(resize * sizeof(__half));
 */
-        } else {
-          float *nz_dst;
-          fn_memorymanager.p2p_malloc((void **)&nz_dst, resize * sizeof(float));
-          cudaMemsetAsync((void *)nz_dst, 0, resize * sizeof(float), stream);
-
-          AT_CUDA_CHECK(cudaMemcpyAsync(fp16, src, resize * sizeof(__half), kind, stream));
-
-          float_scale<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp16, nz_dst, resize);
-//          float_scale<<<(resize + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp16, nz_dst, resize);
-
-          if (iter.element_size(0) == 8) {
-            zero_insert_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((unsigned int*)bit, (unsigned int*)pos, nz_dst, (double *)dst, iter.numel());
-          } else {
-            zero_insert_float<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((unsigned int*)bit, (unsigned int*)pos, nz_dst, (float *)dst, iter.numel());
-          }
-
-          fn_memorymanager.p2p_free((void *)nz_dst, resize * sizeof(float));
-        }
-      } else if (fp16_flag) {
-        // keep print message for debug purpose
-        void* fp16;
-        fn_memorymanager.p2p_malloc(&fp16, sizeof(__half) * iter.numel());
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-        fn_memorymanager.set_numel(tid, iter.numel());
-        fn_memorymanager.set_resize(tid, 0);
-
-        if (ssd_flag) {
-/*
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)(iter.numel() * sizeof(__half));
-*/
-        } else {
-          AT_CUDA_CHECK(cudaMemcpyAsync(fp16, src, iter.numel() * sizeof(__half), kind, stream));
-          if (iter.element_size(0) == 8) {
-            double_scale<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half* )fp16, (double*)dst, iter.numel());
-          } else {
-            float_scale<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half* )fp16, (float*)dst, iter.numel());
-          }
-
-          if (at::globalContext().FNGlobal.isOnDemand()) {
-            cudaStreamSynchronize(stream);
-            fn_memorymanager.event_arr_h2d[tid] = false;
-          }
-        }
       } else {
-        if (true == ssd_flag) {
 /*
-          void* fp16;
-          fn_memorymanager.p2p_malloc(&fp16, nbytes);
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-
-          p2p_addr = (uint64_t)fp16;
-          p2p_size = (uint64_t)nbytes;
-*/
-        } else {
-
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
-
-          AT_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, kind, stream));
-
-          if (at::globalContext().FNGlobal.isOnDemand()) {
-            cudaStreamSynchronize(stream);
-            fn_memorymanager.event_arr_h2d[tid] = false;
-          }
-        }
-      }
-    } else {
-      if (true == ssd_flag) {
-/*
-        void* fp16;
-        fn_memorymanager.p2p_malloc(&fp16, nbytes);
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp16);
-
-        p2p_addr = (uint64_t)fp16;
+        fn_memorymanager.p2p_malloc(&fp_result, nbytes);
         p2p_size = (uint64_t)nbytes;
 */
+      }
+
+      p2p_addr = (uint64_t)fp_result;
+      fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
+    } else {
+      if (iter.element_size(0) >= 4) {
+        if (fp16_flag) {
+          fn_memorymanager.p2p_malloc(&fp_src, resize * sizeof(__half));
+          cudaMemsetAsync((void *)fp_src, 0, resize * sizeof(__half), stream);
+          cudaMemcpyAsync((void *)fp_src, (void *)src, iter.element_size(0) * sizeof(__half), kind, stream);
+
+          fn_memorymanager.p2p_malloc(&fp_result, iter.element_size(0) * resize);
+          cudaMemsetAsync((void *)fp_result, 0, iter.element_size(0) * resize, stream);
+
+          fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
+
+          if (iter.element_size(0) == 8) {
+            half_to_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp_src, (double *)fp_result, resize);
+          } else {
+            half_to_float<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp_src, (float *)fp_result, resize);
+          }
+        } else {
+          fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
+          AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, resize * iter.element_size(0), kind, stream));
+        }
+
+        if (csr_flag && is_csr) {
+          void* bit = fn_memorymanager.get_bit_addr(tid);
+          void* pos = fn_memorymanager.get_pos_addr(tid);
+
+          // fn_memorymanager.p2p_malloc(&csr_result, iter.numel() * iter.element_size(0));
+          // cudaMemsetAsync((void *)csr_result, 0, iter.numel() * iter.element_size(0), stream);
+
+          if (iter.element_size(0) == 8) {
+            zero_insert_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((unsigned int*)bit, (unsigned int*)pos, (double *)fp_result, (double *)dst, iter.numel());
+          } else {
+            zero_insert_float<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((unsigned int*)bit, (unsigned int*)pos, (float *)fp_result, (float *)dst, iter.numel());
+          }
+        } else {
+          AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp_result, resize * iter.element_size(0), cudaMemcpyDeviceToDevice, stream));
+        }
+
+        if (fp_result != NULL) {
+          fn_memorymanager.p2p_free(fp_src, sizeof(__half) * resize);
+          fn_memorymanager.p2p_free(fp_result, iter.element_size(0) * resize);
+        }
       } else {
         fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
 
         AT_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, kind, stream));
-        if (at::globalContext().FNGlobal.isOnDemand()) {
-          cudaStreamSynchronize(stream);
-          fn_memorymanager.event_arr_h2d[tid] = false;
-        }
+      }
+
+      if (at::globalContext().FNGlobal.isOnDemand()) {
+        cudaStreamSynchronize(stream);
+        fn_memorymanager.event_arr_h2d[tid] = false;
       }
     }
   }

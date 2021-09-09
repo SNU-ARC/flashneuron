@@ -43,6 +43,9 @@ variable_list ${op}::apply(variable_list&& grads) {
   ${thread_lock}
   ${asserts}
 
+  if (at::native::fn_memorymanager.is_debug())
+    std::cout << "Operation type: ${op}, " << this->getOid() << std::endl;
+
   if (at::globalContext().FNGlobal.isOnDemand()) {
     FlashNeuronEngine::preFetch(this->getOid());
   }

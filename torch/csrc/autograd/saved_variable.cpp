@@ -143,7 +143,7 @@ const char* ERR_BACKWARD_TWICE =
 
 // Dictionaries for offloading/prefetching
 static std::map<Oid, std::vector<PFInfo>> op_tensor_list;
-static std::map<Oid, c10::StreamId> stream_occupied;
+// static std::map<Oid, c10::StreamId> stream_occupied;
 
 static at::Tensor target_tensor[NUM_TENSOR];
 static bool target_tensor_valid[NUM_TENSOR] = {false};
@@ -369,7 +369,6 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
   }
 
   if (at::globalContext().FNGlobal.isOnDemand() && at::globalContext().FNGlobal.isForward()) {
-
     double elapsed = 0;
     if (accumSize > 0) {
       gettimeofday(&at::native::fn_memorymanager.tv2, NULL);
@@ -401,9 +400,9 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
 
   offload_sync[tid] = true;
 
-  auto str = c10::cuda::getStreamFromPool(false, 0);
+  // auto str = c10::cuda::getStreamFromPool(false, 0);
 
-  c10::cuda::CUDAStreamGuard csg(str);
+  // c10::cuda::CUDAStreamGuard csg(str);
   c10::TensorOptions opt = c10::TensorOptions();
   opt = opt.device(c10::Device(c10::DeviceType::CPU));
   opt = opt.dtype(t.dtype());
@@ -417,11 +416,13 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
 */
   }
 
-  std::cout << "offload tid: " << tid << std::endl;
 
   if (at::globalContext().FNGlobal.isOnDemand()) {
     target_tensor[tid] = t.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
     target_tensor_valid[tid] = true;
+
+    if (at::native::fn_memorymanager.is_debug())
+      std::cout << "Profiling stage - Offload oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
 
     while (at::native::fn_memorymanager.event_arr_d2h[tid]) {
       if (at::native::fn_memorymanager.is_using_ssd()) {
@@ -435,13 +436,17 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
     if (last_use_forward[cur_back_num][tid] == oid) {
       target_tensor[tid] = t.FN_to(opt, false, true, liveness_csr[cur_back_num][tid], c10::MemoryFormat::Contiguous);
       target_tensor_valid[tid] = true;
+
+      if (at::native::fn_memorymanager.is_debug())
+        std::cout << "Offload oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
     }
   }
+
 
   if (at::native::fn_memorymanager.is_using_ssd())
 //    at::native::fn_memorymanager.Arcp2pCompletion(false);
 
-  csg.reset_stream(csg.original_stream());
+  // csg.reset_stream(csg.original_stream());
 
   if (at::globalContext().FNGlobal.isOnDemand() && at::globalContext().FNGlobal.isForward()) {
     gettimeofday(&at::native::fn_memorymanager.tv1, NULL);
@@ -468,6 +473,7 @@ void FlashNeuronEngine::preFetchSync(Oid oid, bool isOutput) {
     return;
   }
 
+/*
   while (1) {
     std::cout << "preFetchSync while" << std::endl;
     auto check = stream_occupied.find(oid);
@@ -478,6 +484,7 @@ void FlashNeuronEngine::preFetchSync(Oid oid, bool isOutput) {
   auto sid = stream_occupied[oid];
   c10::cuda::CUDAStream str(c10::Stream(c10::Stream::UNSAFE, c10::Device(c10::DeviceType::CUDA, 0), sid));
   str.synchronize();
+*/
   cudaStreamSynchronize(at::native::fn_memorymanager.fn_stream);
 
   auto fetch_vec = op_tensor_list[oid];
@@ -660,35 +667,34 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
   auto fetch_vec = op_tensor_list[oid];
   int cur_back_num = at::globalContext().FNGlobal.curBackNum();
 
+/*
   auto str = c10::cuda::getStreamFromPool(false, 0);
   c10::cuda::CUDAStreamGuard csg(str);
   stream_occupied.insert(std::pair<Oid, c10::StreamId>(oid, str.id()));
+*/
 
   for (auto it = fetch_vec.begin(); it != fetch_vec.end(); it++) {
     auto tid = it->second;
-    std::cout << "tid: " << tid << std::endl;
 
     if (target_tensor_valid[tid] == false) {
       return true;
     }
 
-    std::cout << "prefetch 1: " << tid << std::endl;
     at::Tensor& tref = target_tensor[tid];
     c10::TensorOptions opt = c10::TensorOptions();
     opt = opt.device(c10::Device(c10::DeviceType::CUDA));
     opt = opt.dtype(tref.dtype());
 
-    std::cout << "prefetch 2: " << tid << std::endl;
     if (tref.device().type() == c10::DeviceType::CPU) {
-
+/*
       if (!at::globalContext().FNGlobal.isOnDemand()) {
         if (at::native::fn_memorymanager.on_the_fly > 1) {
           c10::cuda::CUDACachingAllocator::emptyCache();
           return false;
         }
       }
+*/
 
-      std::cout << "prefetch 3: " << tid << std::endl;
       if (at::native::fn_memorymanager.is_using_ssd()) {
 /*
         if (at::globalContext().FNGlobal.isOnDemand()) {
@@ -709,20 +715,19 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
 
       if (at::globalContext().FNGlobal.isOnDemand()) {
         last_use_backward[cur_back_num][tid] = oid;
-      }
-
-      if (at::globalContext().FNGlobal.isOnDemand()) {
         tref = tref.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
 
-        std::cout << "prefetch 4: " << tid << std::endl;
-/*
+        if (at::native::fn_memorymanager.is_debug())
+          std::cout << "Profiling stage - Prefetch oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_h2d[tid] << std::endl;
+
         while (at::native::fn_memorymanager.event_arr_h2d[tid]) {
-          std::cout << "preFetch while: " << tid << std::endl;
           at::native::fn_memorymanager.Arcp2pCompletion(false);
         }
-*/
       } else {
         tref = tref.FN_to(opt, false, true, liveness_csr[cur_back_num][tid], c10::MemoryFormat::Contiguous);
+
+        if (at::native::fn_memorymanager.is_debug())
+          std::cout << "Prefetch oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_h2d[tid] << std::endl;
       }
     } else {
 
@@ -761,7 +766,7 @@ void FlashNeuronEngine::resetCppEngine() {
   memset(liveness_size, 0, sizeof(double) * NUM_TENSOR);
 
   op_tensor_list.clear();
-  stream_occupied.clear();
+  // stream_occupied.clear();
 
   --remaining_backward;
   if (remaining_backward == 0) {
