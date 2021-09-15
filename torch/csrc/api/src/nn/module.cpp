@@ -19,6 +19,7 @@ namespace {
 /// Joins names hierarchically: "name_prefix.name" if `name_prefix` is
 /// non-empty, else just "name".
 std::string join_name(const std::string& name_prefix, const std::string& name) {
+  std::cout << "join_name" << std::endl;
   size_t total_size = name.size();
   if (!name_prefix.empty()) {
     total_size += name_prefix.size() + 1;
@@ -76,6 +77,7 @@ std::shared_ptr<Module> Module::clone(const optional<Device>& device) const {
 }
 
 void Module::apply(const ModuleApplyFunction& function) {
+  std::cout << "apply 1" << std::endl;
   function(*this);
   apply_to_submodules(
       [&function](const std::string&, const std::shared_ptr<Module>& module) {
@@ -84,6 +86,7 @@ void Module::apply(const ModuleApplyFunction& function) {
 }
 
 void Module::apply(const ConstModuleApplyFunction& function) const {
+  std::cout << "apply 2" << std::endl;
   function(*this);
   apply_to_submodules(
       [&function](const std::string&, const std::shared_ptr<Module>& module) {
@@ -94,6 +97,7 @@ void Module::apply(const ConstModuleApplyFunction& function) const {
 void Module::apply(
     const NamedModuleApplyFunction& function,
     const std::string& name_prefix) {
+  std::cout << "apply 3" << std::endl;
   function(/*name=*/name_prefix, *this);
   apply_to_submodules(
       [&function](
@@ -106,6 +110,7 @@ void Module::apply(
 void Module::apply(
     const ConstNamedModuleApplyFunction& function,
     const std::string& name_prefix) const {
+  std::cout << "apply 4" << std::endl;
   function(/*name=*/name_prefix, *this);
   apply_to_submodules(
       [&function](
@@ -116,6 +121,7 @@ void Module::apply(
 }
 
 void Module::apply(const ModulePointerApplyFunction& function) const {
+  std::cout << "apply 5" << std::endl;
   function(shared_from_this_checked());
   apply_to_submodules(
       [&function](const std::string&, const std::shared_ptr<Module>& module) {
@@ -126,6 +132,7 @@ void Module::apply(const ModulePointerApplyFunction& function) const {
 void Module::apply(
     const NamedModulePointerApplyFunction& function,
     const std::string& name_prefix) const {
+  std::cout << "apply 6" << std::endl;
   function(
       /*name=*/name_prefix, shared_from_this_checked());
   apply_to_submodules(function, name_prefix);
@@ -178,6 +185,7 @@ OrderedDict<std::string, Tensor> Module::named_buffers(bool recurse) const {
 }
 
 std::vector<std::shared_ptr<Module>> Module::modules(bool include_self) const {
+  std::cout << "modules" << std::endl;
   std::vector<std::shared_ptr<Module>> result;
   if (include_self) {
     apply([&result](const std::shared_ptr<Module>& module) {
@@ -365,6 +373,7 @@ void Module::clone_(Module& other, const optional<Device>& device) {}
 void Module::apply_to_submodules(
     const NamedModulePointerApplyFunction& function,
     const std::string& name_prefix) const {
+  std::cout << "apply_to_submodules" << std::endl;
   for (const auto& child : children_) {
     auto qualified_name = join_name(name_prefix, child.key());
     function(qualified_name, child.value());

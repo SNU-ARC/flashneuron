@@ -56,8 +56,8 @@ class FN_memory {
   cudaEvent_t endEvent;
 
   int global_tensor_id_;
-  int cur_back_num;
-  bool liveness_result[3][NUM_TENSOR] = {false};
+  // int cur_back_num;
+  bool liveness_result[NUM_TENSOR] = {false};
 
   bool hard_training;
   bool relu_thru;

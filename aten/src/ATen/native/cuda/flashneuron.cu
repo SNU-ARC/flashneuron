@@ -120,7 +120,7 @@ typedef struct {
 std::queue<req_element> req_queue;
 */
 
-FN_memory::FN_memory(): global_tensor_id_(0), cur_back_num(0), hard_training(false), relu_thru(false), mapping(false),
+FN_memory::FN_memory(): global_tensor_id_(0), hard_training(false), relu_thru(false), mapping(false),
     gradient_map_accum(0), weight_accum(0), misc_accum(0), isTimer(false),
     isFN(false), isFP16(false), isCSR(false), isUsingSSD(false), isTesla(false), isDebug(false),
     device_sz(0), max_device(0), p2p_sz(0), max_p2p(0) {
@@ -793,7 +793,7 @@ void FN_memory::Arcp2pCompletion(bool prefCall) {
         std::cout << "Prefetching oid call: " << pref_it[pref_idx] << std::endl;
       }
       // bool d2h_finish = torch::autograd::FlashNeuronEngine::preFetch(pref_it[pref_idx]);
-      bool d2h_finish = false;
+      bool d2h_finish = true;
       if (d2h_finish) {
         pref_idx++;
       }

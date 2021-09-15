@@ -337,7 +337,7 @@ fused_dropout_cuda(const Tensor& self, double p, c10::optional<Generator> gen_){
   ret.unsafeGetTensorImpl()->tensor_id = newTid;
 
   newTid = ++fn_memorymanager.global_tensor_id_;
-  Tensor mask = fn_memorymanager.liveness_result[fn_memorymanager.cur_back_num][newTid] ?
+  Tensor mask = fn_memorymanager.liveness_result[newTid] ?
           at::FNempty(self.sizes(), self.options().dtype(kByte)) : at::empty(self.sizes(), self.options().dtype(kByte));
   mask.unsafeGetTensorImpl()->tensor_id = newTid;
 

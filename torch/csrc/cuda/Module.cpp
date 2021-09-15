@@ -533,10 +533,10 @@ PyObject * THCPModule_getCurrentBlasHandle_wrap(PyObject *self, PyObject *noargs
   END_HANDLE_TH_ERRORS
 }
 
-PyObject * THCPModule_Arcp2pSetting(PyObject *_unused, PyObject *arg)
+PyObject * THCPModule_FNSetting(PyObject *_unused, PyObject *arg)
 {
   HANDLE_TH_ERRORS
-  THPUtils_assert(THPUtils_checkLong(arg), "invalid argument to Arcp2pSetting");
+  THPUtils_assert(THPUtils_checkLong(arg), "invalid argument to FNSetting");
   int flags = (int) THPUtils_unpackLong(arg);
   at::native::fn_memorymanager.Arcp2pSetting(flags);
 
@@ -574,7 +574,7 @@ static struct PyMethodDef _THCPModule_methods[] = {
   {"_cuda_sleep", THCPModule_cudaSleep, METH_O, nullptr},
   {"_cuda_lock_mutex",   THCPModule_cudaLockMutex,   METH_NOARGS,  nullptr},
   {"_cuda_unlock_mutex", THCPModule_cudaUnlockMutex, METH_NOARGS,  nullptr},
-  {"_cuda_arc_setting", (PyCFunction)THCPModule_Arcp2pSetting, METH_O, nullptr},
+  {"_cuda_fn_setting", (PyCFunction)THCPModule_FNSetting, METH_O, nullptr},
 #ifdef USE_NCCL
   {"_nccl_version", THCPModule_nccl_version, METH_NOARGS, nullptr},
   {"_nccl_unique_id", THCPModule_nccl_unique_id, METH_NOARGS, nullptr},

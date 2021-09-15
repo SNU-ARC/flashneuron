@@ -150,13 +150,13 @@ static bool target_tensor_valid[NUM_TENSOR] = {false};
 
 static bool offload_sync[NUM_TENSOR] = {false};
 static bool prefetch_sync[NUM_TENSOR] = {false};
-static int last_use_forward[3][NUM_TENSOR] = {-1};
-static int last_use_backward[3][NUM_TENSOR] = {-1};
+static int last_use_forward[NUM_TENSOR] = {-1};
+static int last_use_backward[NUM_TENSOR] = {-1};
 
 static double liveness_time[NUM_TENSOR] = {0.0};
 static double liveness_size[NUM_TENSOR] = {0.0};
-static bool liveness_csr[3][NUM_TENSOR] = {false};
-static bool liveness_fp[3][NUM_TENSOR] = {false};
+static bool liveness_csr[NUM_TENSOR] = {false};
+static bool liveness_fp[NUM_TENSOR] = {false};
 
 static double last_time_slot = 0;
 
@@ -172,7 +172,7 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
   double real_trans_start[NUM_TENSOR] = {0};
   double remainSize = accumSize - freeSize;
   accumSize = 0;
-  int cur_back_num = at::globalContext().FNGlobal.curBackNum();
+  // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
 
   for (int i = 0; i < NUM_TENSOR-1; i++)
     liveness_time[i + 1] += liveness_time[i];
@@ -185,10 +185,10 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
     else
       real_trans_time[i] = liveness_size[i] * 1000 / mem_wr;
 
-    if (at::native::fn_memorymanager.is_fp16() && liveness_fp[cur_back_num][i])
+    if (at::native::fn_memorymanager.is_fp16() && liveness_fp[i])
       real_trans_time[i] = real_trans_time[i] / 2;
 
-    if (at::native::fn_memorymanager.is_csr() && liveness_csr[cur_back_num][i])
+    if (at::native::fn_memorymanager.is_csr() && liveness_csr[i])
       real_trans_time[i] = real_trans_time[i] / 2;
   }
 
@@ -201,7 +201,7 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
 
   for (int i = 0; i < NUM_TENSOR; i++) {
     if (liveness_size[i] > 1) {
-      at::native::fn_memorymanager.liveness_result[cur_back_num][i] = true;
+      at::native::fn_memorymanager.liveness_result[i] = true;
       remainSize -= liveness_size[i];
 
       previous_i = i;
@@ -211,7 +211,7 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
 
   for (int i = previous_i + 1; i < NUM_TENSOR; i++) {
     if (liveness_size[i] > 1) {
-      at::native::fn_memorymanager.liveness_result[cur_back_num][i] = true;
+      at::native::fn_memorymanager.liveness_result[i] = true;
       remainSize -= liveness_size[i];
 
       double delay_maybe = liveness_time[previous_i] + real_trans_time[previous_i] + delay_time[previous_i] - liveness_time[i];
@@ -239,15 +239,16 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
     for (int i = previous_i + 1; i < NUM_TENSOR; i++) {
       int delete_i = 0;
       for (delete_i = previous_i; delete_i >= 0; delete_i--) {
-        if (liveness_size[delete_i] > 1 && at::native::fn_memorymanager.liveness_result[cur_back_num][delete_i] &&
-            !liveness_csr[cur_back_num][delete_i] && !liveness_fp[cur_back_num][delete_i]) {
+        if (liveness_size[delete_i] > 1 && at::native::fn_memorymanager.liveness_result[delete_i] &&
+            !liveness_csr[delete_i] && !liveness_fp[delete_i]) {
           break;
         }
       }
 
-      if (delete_i == -1 && !at::globalContext().FNGlobal.isBERT()) {
+      // if (delete_i == -1 && !at::globalContext().FNGlobal.isBERT()) {
+      if (delete_i == -1) {
         for (delete_i = previous_i; delete_i >= 0; delete_i--) {
-          if (liveness_size[delete_i] > 1 && at::native::fn_memorymanager.liveness_result[cur_back_num][delete_i] && !liveness_csr[cur_back_num][delete_i]) {
+          if (liveness_size[delete_i] > 1 && at::native::fn_memorymanager.liveness_result[delete_i] && !liveness_csr[delete_i]) {
             break;
           }
         }
@@ -260,26 +261,26 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
         break;
       }
 
-      at::native::fn_memorymanager.liveness_result[cur_back_num][delete_i] = false;
+      at::native::fn_memorymanager.liveness_result[delete_i] = false;
 
       int add_i = 0;
 
       while (delete_size > 0) {
         for (delete_previous_i = delete_i; delete_previous_i >= 0; delete_previous_i--) {
-          if (at::native::fn_memorymanager.liveness_result[cur_back_num][delete_previous_i]) {
+          if (at::native::fn_memorymanager.liveness_result[delete_previous_i]) {
             break;
           }
         }
 
         for (add_i = previous_i + 1; add_i < NUM_TENSOR; add_i++) {
-          if (liveness_size[add_i] > 1 && liveness_csr[cur_back_num][add_i] && !at::native::fn_memorymanager.liveness_result[cur_back_num][add_i]) {
+          if (liveness_size[add_i] > 1 && liveness_csr[add_i] && !at::native::fn_memorymanager.liveness_result[add_i]) {
             break;
           }
         }
 
         if (add_i == NUM_TENSOR) {
           for (add_i = previous_i + 1; add_i < NUM_TENSOR; add_i++) {
-            if (liveness_size[add_i] > 1 && liveness_fp[cur_back_num][add_i] && !at::native::fn_memorymanager.liveness_result[cur_back_num][add_i]) {
+            if (liveness_size[add_i] > 1 && liveness_fp[add_i] && !at::native::fn_memorymanager.liveness_result[add_i]) {
               break;
             }
           }
@@ -289,9 +290,9 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
           break;
         }
 
-        at::native::fn_memorymanager.liveness_result[cur_back_num][add_i] = true;
+        at::native::fn_memorymanager.liveness_result[add_i] = true;
         for (int test = delete_i; test <= add_i; test++) {
-          if (at::native::fn_memorymanager.liveness_result[cur_back_num][test]) {
+          if (at::native::fn_memorymanager.liveness_result[test]) {
             if (delete_previous_i != -1) {
               double delay_maybe = liveness_time[delete_previous_i] + real_trans_time[delete_previous_i] + delay_time[delete_previous_i] - liveness_time[test];
               if (delay_maybe <= 0) {
@@ -319,9 +320,9 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
 
     if (remainSize > 0) {
       for (int i = 0; i < NUM_TENSOR; i++) {
-        if (liveness_size[i] > 1 && !at::native::fn_memorymanager.liveness_result[cur_back_num][i] && liveness_csr[cur_back_num][i]) {
+        if (liveness_size[i] > 1 && !at::native::fn_memorymanager.liveness_result[i] && liveness_csr[i]) {
           remainSize -= liveness_size[i];
-          at::native::fn_memorymanager.liveness_result[cur_back_num][i] = true;
+          at::native::fn_memorymanager.liveness_result[i] = true;
         }
 
         if (remainSize < 0) break;
@@ -330,9 +331,9 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
 
     if (remainSize > 0) {
       for (int i = 0; i < NUM_TENSOR; i++) {
-        if (liveness_size[i] > 1 && !at::native::fn_memorymanager.liveness_result[cur_back_num][i] && liveness_fp[cur_back_num][i]) {
+        if (liveness_size[i] > 1 && !at::native::fn_memorymanager.liveness_result[i] && liveness_fp[i]) {
           remainSize -= liveness_size[i];
-          at::native::fn_memorymanager.liveness_result[cur_back_num][i] = true;
+          at::native::fn_memorymanager.liveness_result[i] = true;
         }
 
         if (remainSize < 0) break;
@@ -350,9 +351,9 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
 
   auto tid =  t.unsafeGetIntrusivePtr()->tensor_id;
   at::native::fn_memorymanager.feature_map_accum[tid] = (double)t.nbytes() / 1024 / 1024;
-  int cur_back_num = at::globalContext().FNGlobal.curBackNum();
+  // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
 
-  if (at::native::fn_memorymanager.liveness_result[cur_back_num][tid] == false && !at::globalContext().FNGlobal.isOnDemand()) {
+  if (at::native::fn_memorymanager.liveness_result[tid] == false && !at::globalContext().FNGlobal.isOnDemand()) {
     *fetch_loc = SavedVariable(t, isOutput);
     return;
   }
@@ -382,17 +383,17 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
     liveness_size[tid] = (double)t.nbytes() / 1024 / 1024;
 
     if (at::native::fn_memorymanager.is_csr())
-      liveness_csr[cur_back_num][tid] = at::native::fn_memorymanager.relu_thru;
+      liveness_csr[tid] = at::native::fn_memorymanager.relu_thru;
     else
-      liveness_csr[cur_back_num][tid] = false;
+      liveness_csr[tid] = false;
 
     if (at::native::fn_memorymanager.is_fp16()) {
       if (t.element_size() >= 4)
-        liveness_fp[cur_back_num][tid] = true;
+        liveness_fp[tid] = true;
       else
-        liveness_fp[cur_back_num][tid] = false;
+        liveness_fp[tid] = false;
     } else {
-      liveness_fp[cur_back_num][tid] = false;
+      liveness_fp[tid] = false;
     }
 
     at::native::fn_memorymanager.relu_thru = false;
@@ -430,11 +431,11 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
       }
     }
 
-    last_use_forward[cur_back_num][tid] = oid;
+    last_use_forward[tid] = oid;
 
   } else {
-    if (last_use_forward[cur_back_num][tid] == oid) {
-      target_tensor[tid] = t.FN_to(opt, false, true, liveness_csr[cur_back_num][tid], c10::MemoryFormat::Contiguous);
+    if (last_use_forward[tid] == oid) {
+      target_tensor[tid] = t.FN_to(opt, false, true, liveness_csr[tid], c10::MemoryFormat::Contiguous);
       target_tensor_valid[tid] = true;
 
       if (at::native::fn_memorymanager.is_debug())
@@ -637,8 +638,8 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
         }
       }
     } else {
-      int cur_back_num = at::globalContext().FNGlobal.curBackNum();
-      if ((oid == last_use_backward[cur_back_num][tid]) && target_tensor_valid[tid]) {
+      // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
+      if ((oid == last_use_backward[tid]) && target_tensor_valid[tid]) {
         target_tensor_valid[tid] = false;
         fetch_loc->reset_data();
         c10::cuda::CUDACachingAllocator::emptyCache();
@@ -665,7 +666,7 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
   }
 
   auto fetch_vec = op_tensor_list[oid];
-  int cur_back_num = at::globalContext().FNGlobal.curBackNum();
+  // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
 
 /*
   auto str = c10::cuda::getStreamFromPool(false, 0);
@@ -714,7 +715,7 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
       }
 
       if (at::globalContext().FNGlobal.isOnDemand()) {
-        last_use_backward[cur_back_num][tid] = oid;
+        last_use_backward[tid] = oid;
         tref = tref.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
 
         if (at::native::fn_memorymanager.is_debug())
@@ -724,7 +725,7 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
           at::native::fn_memorymanager.Arcp2pCompletion(false);
         }
       } else {
-        tref = tref.FN_to(opt, false, true, liveness_csr[cur_back_num][tid], c10::MemoryFormat::Contiguous);
+        tref = tref.FN_to(opt, false, true, liveness_csr[tid], c10::MemoryFormat::Contiguous);
 
         if (at::native::fn_memorymanager.is_debug())
           std::cout << "Prefetch oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_h2d[tid] << std::endl;
@@ -738,19 +739,12 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
 
 void FlashNeuronEngine::resetCppEngine() {
   // static int backward_num_CycleGAN = 3;
-  static int backward_num_BERT = 1;
-  static int remaining_backward = -1;//backward_num_in_one_iter;
+  // static int backward_num_BERT = 1;
+  // static int remaining_backward = 1;//backward_num_in_one_iter;
 
-  if (remaining_backward == -1) {
-/*
-    if (at::globalContext().FNGlobal.isCycleGAN()) {
-      remaining_backward = backward_num_CycleGAN;
-    } else {
-      remaining_backward = backward_num_BERT;
-    }
-*/
-    remaining_backward = backward_num_BERT;
-  }
+  // if (remaining_backward == -1) {
+  //   remaining_backward = backward_num_BERT;
+  // }
 
   for(auto i = 0; i < NUM_TENSOR; i ++) {
     if (prefetch_sync[i] == true) {
@@ -768,8 +762,9 @@ void FlashNeuronEngine::resetCppEngine() {
   op_tensor_list.clear();
   // stream_occupied.clear();
 
-  --remaining_backward;
-  if (remaining_backward == 0) {
+  // --remaining_backward;
+  // std::cout << "remaining_backward: " << remaining_backward << std::endl;
+  // if (remaining_backward == 0) {
     at::globalContext().FNGlobal.resetGlobalTid();
     at::globalContext().FNGlobal.resetGlobalOid();
 
@@ -786,10 +781,13 @@ void FlashNeuronEngine::resetCppEngine() {
     at::native::fn_memorymanager.weight_accum = 0;
     at::native::fn_memorymanager.misc_accum = 0;
 
-
+/*
     if (at::globalContext().FNGlobal.isBERT())
       remaining_backward = backward_num_BERT;
-  }
+    else
+      remaining_backward = backward_num_BERT;
+*/
+  // }
 }
 
 }} // namespace torch::autograd

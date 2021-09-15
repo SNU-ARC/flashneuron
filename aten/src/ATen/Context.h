@@ -207,8 +207,8 @@ class TORCH_API Context {
   bool areVmapFallbackWarningsEnabled() const;
 
   struct FNGlobalContext {
-    bool isBERT();
-    int curBackNum();
+    // bool isBERT();
+    // int curBackNum();
     c10::cuda::CUDAStream globalOffloadStream();
     c10::cuda::CUDAStream globalPrefetchStream();
     // tid, oid manipulation

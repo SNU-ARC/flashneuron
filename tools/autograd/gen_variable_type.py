@@ -196,8 +196,8 @@ ${return_type} ${type_wrapper_name}(${formals}) ;
 METHOD_DEFINITION = CodeTemplate("""\
 ${return_type} ${type_wrapper_name}(${formals}) {
 
-  // if (at::native::fn_memorymanager.is_debug())
-  //   std::cout << "Forward operation: ${type_wrapper_name}" << std::endl;
+//  if (at::native::fn_memorymanager.is_debug())
+//    std::cout << "Micro op: ${type_wrapper_name}" << std::endl;
 
   ${type_definition_body}
 }

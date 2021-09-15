@@ -85,7 +85,7 @@ static inline Tensor FN_to_impl(const Tensor& self, const TensorOptions& options
   auto tid = self.getIntrusivePtr().get()->tensor_id;
   Tensor r;
 
-  if (at::native::fn_memorymanager.liveness_result[0][tid]) {
+  if (at::native::fn_memorymanager.liveness_result[tid]) {
     r = at::FNempty(self.sizes(),
                        options.memory_format(memory_format).pinned_memory(false),
                        c10::nullopt);

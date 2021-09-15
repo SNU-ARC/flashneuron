@@ -32,8 +32,8 @@ _queued_calls = []  # don't invoke these until initialization occurs
 _is_in_bad_fork = getattr(torch._C, "_cuda_isInBadFork", lambda: False)
 _device_t = Union[_device, str, int, None]
 
-def arc_setting(flags: int):
-    return torch._C._cuda_arc_setting(flags)
+def fn_setting(flags: int):
+    return torch._C._cuda_fn_setting(flags)
 
 # Define dummy _CudaDeviceProperties type if PyTorch was compiled without CUDA
 if hasattr(torch._C, '_CudaDeviceProperties'):

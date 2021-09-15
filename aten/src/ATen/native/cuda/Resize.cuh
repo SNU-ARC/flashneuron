@@ -30,7 +30,7 @@ static inline void maybe_resize_storage_cuda(TensorImpl* self, int64_t new_size)
           globalContext().getTHCState(),
           THTensor_getStoragePtr(self),
           new_size_bytes,
-          fn_memorymanager.liveness_result[fn_memorymanager.cur_back_num][self->tensor_id]
+          fn_memorymanager.liveness_result[self->tensor_id]
       );
     }
   }

@@ -273,25 +273,24 @@ void Context::setDisplayVmapFallbackWarnings(bool enabled) {
  *  FlashNeuron
  ****************/
 
-#define BP_NUM_PER_ITER 1
-#define RESET_TID 0 // 4-4 = 0
+// #define BP_NUM_PER_ITER 1
+// #define RESET_TID 0 // 4-4 = 0
 
-static bool cycle_gan = 0;
-static bool bert = 0;
+// static bool bert = 0;
 
-bool Context::FNGlobalContext::isBERT() {return bert;}
+// bool Context::FNGlobalContext::isBERT() {return bert;}
 
 static int global_operation_id_ = 0;
 static bool on_debug_mode_ = 0;
 static bool on_demand_mode_ = 1; // default 1. Set 0 after first iteration(Profiling Stage)
 static bool on_forwarding_ = 1; // 1 in forwarding phase. 0 in backprop. phase
-static Oid back_path_[BP_NUM_PER_ITER][NUM_OP] = {0};
-static int back_path_idx[BP_NUM_PER_ITER] = {-1};
+static Oid back_path_[NUM_OP] = {0};
+static int back_path_idx = -1;
 
 static auto offload_stream = c10::cuda::getStreamFromPool(false, 0);
 static auto prefetch_stream = offload_stream;//c10::cuda::getStreamFromPool(false, 0);
 
-int Context::FNGlobalContext::curBackNum() { return at::native::fn_memorymanager.cur_back_num; }
+// int Context::FNGlobalContext::curBackNum() { return at::native::fn_memorymanager.cur_back_num; }
 
 c10::cuda::CUDAStream Context::FNGlobalContext::globalOffloadStream() { return offload_stream; }
 
@@ -310,9 +309,13 @@ void Context::FNGlobalContext::setTid(Tensor& t, int tid) {
 void Context::FNGlobalContext::updateTid(Tensor& t, int tid) { t.unsafeGetTensorImpl()->tensor_id = tid; }
 
 void Context::FNGlobalContext::resetGlobalTid() {
-      if (cycle_gan) at::native::fn_memorymanager.global_tensor_id_ = RESET_TID;
-          else if (bert) at::native::fn_memorymanager.global_tensor_id_ = 2;
-              else at::native::fn_memorymanager.global_tensor_id_ = 0;
+  at::native::fn_memorymanager.global_tensor_id_ = 0;
+/*
+  if (bert)
+    at::native::fn_memorymanager.global_tensor_id_ = 2;
+  else
+    at::native::fn_memorymanager.global_tensor_id_ = 0;
+*/
 }
 
 Oid Context::FNGlobalContext::getCurOid() { return global_operation_id_; }
@@ -324,20 +327,27 @@ void Context::FNGlobalContext::resetGlobalOid() { global_operation_id_ = 0; }
 // set flags
 void Context::FNGlobalContext::startForward() {
   on_forwarding_ = 1;
+/*
   at::native::fn_memorymanager.cur_back_num++;
   if(at::native::fn_memorymanager.cur_back_num == BP_NUM_PER_ITER)
     at::native::fn_memorymanager.cur_back_num = 0;
+*/
 }
 
-void Context::FNGlobalContext::endForward() { on_forwarding_ = 0; }
+void Context::FNGlobalContext::endForward() {
+  on_forwarding_ = 0;
+}
 
 void Context::FNGlobalContext::endOnDemand() {
+  on_demand_mode_ = 0;
+/*
   static int remaining_backward_in_first_iter = BP_NUM_PER_ITER;
   --remaining_backward_in_first_iter;
   if (remaining_backward_in_first_iter == 0) {
     on_demand_mode_ = 0;
     at::native::fn_memorymanager.hard_training = false;
   }
+*/
 }
 
 bool Context::FNGlobalContext::isForward() { return on_forwarding_; }
@@ -348,17 +358,17 @@ void Context::FNGlobalContext::turnOnDebugMode() { on_debug_mode_ = 1; }
 void Context::FNGlobalContext::pushBackOid(Oid oid) {
   if (!on_demand_mode_) std::cerr << "Illegal call: not on-demand mode" << std::endl;
 
-  int idx = ++back_path_idx[at::native::fn_memorymanager.cur_back_num];
-  back_path_[at::native::fn_memorymanager.cur_back_num][idx] = oid;
+  // int idx = ++back_path_idx[at::native::fn_memorymanager.cur_back_num];
+  back_path_[++back_path_idx] = oid;
 }
 
 //std::vector<Oid> Context::FNGlobalContext::getBackPath() {
 int* Context::FNGlobalContext::getBackPath() {
-  return back_path_[at::native::fn_memorymanager.cur_back_num];
+  return back_path_;
 };
 
 int Context::FNGlobalContext::getLastIdx() {
-  return back_path_idx[at::native::fn_memorymanager.cur_back_num];
+  return back_path_idx;
 };
 
 } // namespace at

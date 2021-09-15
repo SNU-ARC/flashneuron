@@ -17,6 +17,7 @@ void FunctionalImpl::pretty_print(std::ostream& stream) const {
 }
 
 Tensor FunctionalImpl::forward(Tensor input) {
+  std::cout << "FunctionalImpl::forward" << std::endl;
   return function_(std::move(input));
 }
 

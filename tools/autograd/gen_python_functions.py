@@ -426,8 +426,38 @@ static PyObject * ${pycname}(PyObject* self_, PyObject* args, PyObject* kwargs)
   static PythonArgParser parser({
     ${signatures}
   }, /*traceable=*/${traceable});
-
+ 
   auto oid = at::globalContext().FNGlobal.getNewOid();
+  if (at::globalContext().FNGlobal.isDebugMode()) {
+    std::cout << "OPERATION ${name}, OPID: " << oid << std::endl;
+  }
+
+  ParsedArgs<${max_args}> parsed_args;
+  auto _r = parser.parse(${self_}, args, kwargs, parsed_args);
+  ${check_has_torch_function}
+
+  ${dispatch}
+
+  ${method_footer}
+}
+
+""")
+
+PY_VARIABLE_METHOD_VARARGS_SINGLETON_NO_OID = CodeTemplate("""\
+// ${name}
+static PyObject * ${pycname}(PyObject* self_, PyObject* args, PyObject* kwargs)
+{
+  ${method_header}
+  static PythonArgParser parser({
+    ${signatures}
+  }, /*traceable=*/${traceable});
+
+/*
+  auto oid = at::globalContext().FNGlobal.getNewOid();
+  if (at::globalContext().FNGlobal.isDebugMode()) {
+    std::cout << "OPERATION ${name}, OPID: " << oid << std::endl;
+  }
+*/
 
   ParsedArgs<${max_args}> parsed_args;
   auto _r = parser.parse(${self_}, args, kwargs, parsed_args);
@@ -492,7 +522,11 @@ def method_impl(
     if noarg:
         template = PY_VARIABLE_METHOD_NOARGS
     elif is_singleton:
-        template = PY_VARIABLE_METHOD_VARARGS_SINGLETON
+        str_name = str(name)
+        if str_name == "uniform_" or str_name == "_has_compatible_shallow_copy_type" or str_name == "permute" or str_name == "clone" or str_name == "stack" or str_name == "zeros_like" or str_name == "mul_":
+            template = PY_VARIABLE_METHOD_VARARGS_SINGLETON_NO_OID
+        else:
+            template = PY_VARIABLE_METHOD_VARARGS_SINGLETON
     else:
         template = PY_VARIABLE_METHOD_VARARGS
 

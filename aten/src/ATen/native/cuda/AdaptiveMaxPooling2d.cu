@@ -432,12 +432,12 @@ std::tuple<Tensor, Tensor> adaptive_max_pool2d_cuda(
 //  Tensor indices = at::empty({0}, input.options().dtype(kLong));
 
   int newTid = ++fn_memorymanager.global_tensor_id_;
-  Tensor output = fn_memorymanager.liveness_result[fn_memorymanager.cur_back_num][newTid] ?
+  Tensor output = fn_memorymanager.liveness_result[newTid] ?
       at::FNempty({0}, input.options()) : at::empty({0}, input.options());
   output.unsafeGetTensorImpl()->tensor_id = newTid;
 
   newTid = ++fn_memorymanager.global_tensor_id_;
-  Tensor indices = fn_memorymanager.liveness_result[fn_memorymanager.cur_back_num][newTid] ?
+  Tensor indices = fn_memorymanager.liveness_result[newTid] ?
       at::FNempty({0}, input.options().dtype(kLong)) : at::empty({0}, input.options().dtype(kLong));
   indices.unsafeGetTensorImpl()->tensor_id = newTid;
 

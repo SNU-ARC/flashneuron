@@ -857,7 +857,7 @@ auto Engine::execute(const edge_list& roots,
   c10::cuda::CUDACachingAllocator::emptyCache();
 
   if (at::globalContext().FNGlobal.isDebugMode())
-    std::cout << "================Forward end: " << at::globalContext().FNGlobal.curBackNum() << " ===================" << std::endl;
+    std::cout << "================Forward end===================" << std::endl;
 
   if (!at::globalContext().FNGlobal.isOnDemand()) {
     at::native::fn_memorymanager.pref_it = at::globalContext().FNGlobal.getBackPath();
@@ -921,6 +921,8 @@ auto Engine::execute(const edge_list& roots,
   } else {
     execute_with_graph_task(graph_task, graph_root, InputBuffer(variable_list()));
   }
+
+  std::cout << "================Backward end===================" << std::endl;
 
   c10::cuda::CUDACachingAllocator::emptyCache();
   if (at::globalContext().FNGlobal.isOnDemand() && !at::native::fn_memorymanager.hard_training) {
