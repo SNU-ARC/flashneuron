@@ -928,7 +928,7 @@ auto Engine::execute(const edge_list& roots,
   if (at::globalContext().FNGlobal.isOnDemand() && !at::native::fn_memorymanager.hard_training) {
     double remainSize = 0;
     if (at::native::fn_memorymanager.is_fn()) {
-      FlashNeuronEngine::offloading_scheduler((double)freeBytes / 1024 / 1024 * 0.6);
+      // FlashNeuronEngine::offloading_scheduler((double)freeBytes / 1024 / 1024 * 0.6);
     }
   }
 

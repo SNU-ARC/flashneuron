@@ -554,7 +554,7 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
 
         # Seperate non-offload, and offload targeted saved variables code
         # setup.extend(save_variables(info.all_saved_inputs, False, guard_for))
-        stmts, offload_stmts = save_variables(info.all_saved_inputs, False, guard_for)
+        stmts, offload_stmts = save_variables(info.all_saved_inputs, False, False, guard_for)
         setup.extend(stmts)
 
         for arg in args_with_derivatives:
@@ -636,6 +636,7 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
     def save_variables(
         saved_variables: Sequence[SavedAttribute],
         is_output: bool,
+        relu_flag: bool,
         guard_for: Callable[[SavedAttribute], Optional[str]] = lambda name: None,
     ) -> Sequence[str]:
         # assign the saved variables to the generated grad_fn
@@ -666,6 +667,7 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
             elif arg.type == 'IntArrayRef':
                 expr = expr + ".vec()"
             guard = guard_for(arg)
+
             if guard is None:
                 # Origin gen function code
                 # stmts.append(f'grad_fn->{name} = {expr};')
@@ -680,7 +682,16 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
                         offload_stmts.append(f'  grad_fn->{name} = {expr};')
                         offload_stmts.append('}')
                 else:
-                    stmts.append(f'grad_fn->{name} = {expr};')
+                    if relu_flag:
+                        offload_stmts.append('if (at::globalContext().FNGlobal.isForward()) {')
+                        offload_stmts.append('  at::native::fn_memorymanager.relu_thru = true;')
+                        offload_stmts.append(f'  FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                        offload_stmts.append('  grad_fn->setOid(oid);')
+                        offload_stmts.append('} else {')
+                        offload_stmts.append(f'  grad_fn->{name} = {expr};')
+                        offload_stmts.append('}')
+                    else:
+                        stmts.append(f'grad_fn->{name} = {expr};')
             else:
                 # Origin gen function code
                 # stmts.append(f'if ({guard}) {{')
@@ -871,9 +882,14 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
             # out functions don't currently support differentiation
             return ''
         if info is not None and info.has_derivatives:
-            stmts, offload_stmts = save_variables(info.all_saved_outputs, True)
+            stmts, offload_stmts = save_variables(info.all_saved_outputs, True, info.op == 'ReluBackward1')
+
+            if len(offload_stmts) != 0:
+                return CONDITIONAL.substitute(cond='grad_fn', statements=offload_stmts)
+
             if len(stmts) == 0:
                 return ''
+
             return CONDITIONAL.substitute(cond='grad_fn', statements=stmts)
         return ''
 

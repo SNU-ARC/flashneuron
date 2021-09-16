@@ -419,11 +419,11 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
 
 
   if (at::globalContext().FNGlobal.isOnDemand()) {
-    target_tensor[tid] = t.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
+    target_tensor[tid] = t.FN_to(opt, false, liveness_csr[tid], true, c10::MemoryFormat::Contiguous);
     target_tensor_valid[tid] = true;
 
     if (at::native::fn_memorymanager.is_debug())
-      std::cout << "Profiling stage - Offload oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
+      std::cout << "Profiling stage - Offload oid: " << oid << ", tid: " << tid << ", csr: " << liveness_csr[tid] << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
 
     while (at::native::fn_memorymanager.event_arr_d2h[tid]) {
       if (at::native::fn_memorymanager.is_using_ssd()) {
@@ -435,11 +435,11 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
 
   } else {
     if (last_use_forward[tid] == oid) {
-      target_tensor[tid] = t.FN_to(opt, false, true, liveness_csr[tid], c10::MemoryFormat::Contiguous);
+      target_tensor[tid] = t.FN_to(opt, false, liveness_csr[tid], true, c10::MemoryFormat::Contiguous);
       target_tensor_valid[tid] = true;
 
       if (at::native::fn_memorymanager.is_debug())
-        std::cout << "Offload oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
+        std::cout << "Offload oid: " << oid << ", tid: " << tid << ", csr: " << liveness_csr[tid] << ", " << at::native::fn_memorymanager.event_arr_d2h[tid] << std::endl;
     }
   }
 
@@ -505,7 +505,9 @@ void FlashNeuronEngine::preFetchSync(Oid oid, bool isOutput) {
     }
 
     while (1) {
-      std::cout << "preFetchSync while2" << std::endl;
+      if (at::native::fn_memorymanager.is_debug())
+        std::cout << "preFetchSync while2" << std::endl;
+
       // volatile at::native::p2pdsa_cpl *p_flu_cpl = (volatile at::native::p2pdsa_cpl *)at::native::fn_memorymanager.get_cpl_addr(tid, at::native::p2pdsa_gputossd);
       // volatile at::native::p2pdsa_cpl *p_pre_cpl = (volatile at::native::p2pdsa_cpl *)at::native::fn_memorymanager.get_cpl_addr(tid, at::native::p2pdsa_ssdtogpu);
 
@@ -569,8 +571,12 @@ void FlashNeuronEngine::preFetchSync(Oid oid, bool isOutput) {
               void* pos = at::native::fn_memorymanager.get_pos_addr(tid);
               unsigned int resize = at::native::fn_memorymanager.get_resize(tid);
               at::native::fn_memorymanager.p2p_free(fp16, sizeof(__half) * resize);
-              at::native::fn_memorymanager.p2p_free(bit, sizeof(unsigned int) * bit_elements);
-              at::native::fn_memorymanager.p2p_free(pos, sizeof(unsigned int) * pos_elements);
+
+              if (bit != NULL)
+                at::native::fn_memorymanager.p2p_free(bit, sizeof(unsigned int) * bit_elements);
+
+              if (pos != NULL)
+                at::native::fn_memorymanager.p2p_free(pos, sizeof(unsigned int) * pos_elements);
             } else if (at::native::fn_memorymanager.is_fp16() && resize == 0) {
               at::native::fn_memorymanager.p2p_free(fp16, sizeof(__half) * numel);
             }
@@ -608,6 +614,7 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
   auto fetch_vec = op_tensor_list[oid];
   for (auto it = fetch_vec.begin(); it != fetch_vec.end(); it++) {
     auto tid = it->second;
+
     if (at::globalContext().FNGlobal.isOnDemand()) {
       at::Tensor& tref = target_tensor[tid];
       c10::TensorOptions opt = c10::TensorOptions();
@@ -644,6 +651,8 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
         fetch_loc->reset_data();
         c10::cuda::CUDACachingAllocator::emptyCache();
 
+        if (at::native::fn_memorymanager.is_debug())
+          std::cout << "Tensor drop: " << tid << ", " << oid << std::endl;
       }
     }
   }
@@ -716,7 +725,7 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
 
       if (at::globalContext().FNGlobal.isOnDemand()) {
         last_use_backward[tid] = oid;
-        tref = tref.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
+        tref = tref.FN_to(opt, false, liveness_csr[tid], true,  c10::MemoryFormat::Contiguous);
 
         if (at::native::fn_memorymanager.is_debug())
           std::cout << "Profiling stage - Prefetch oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_h2d[tid] << std::endl;
@@ -725,7 +734,7 @@ bool FlashNeuronEngine::preFetch(Oid oid) {
           at::native::fn_memorymanager.Arcp2pCompletion(false);
         }
       } else {
-        tref = tref.FN_to(opt, false, true, liveness_csr[tid], c10::MemoryFormat::Contiguous);
+        tref = tref.FN_to(opt, false, liveness_csr[tid], true, c10::MemoryFormat::Contiguous);
 
         if (at::native::fn_memorymanager.is_debug())
           std::cout << "Prefetch oid: " << oid << ", tid: " << tid << ", " << at::native::fn_memorymanager.event_arr_h2d[tid] << std::endl;

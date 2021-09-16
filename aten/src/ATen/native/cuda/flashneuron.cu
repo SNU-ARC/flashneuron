@@ -788,7 +788,7 @@ void FN_memory::Arcp2pCompletion(bool prefCall) {
 
   // Automatically prefetch
   if(!at::globalContext().FNGlobal.isOnDemand()) {
-    if (pref_end >= pref_idx && prefCall) {
+    if ((pref_end >= pref_idx) && prefCall) {
       if (isDebug) {
         std::cout << "Prefetching oid call: " << pref_it[pref_idx] << std::endl;
       }

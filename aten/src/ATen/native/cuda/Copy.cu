@@ -434,10 +434,11 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
 
   if (kind == cudaMemcpyDeviceToHost) {
     if (iter.element_size(0) >= 4) {
-      void *bit, *pos;
+      void *bit = NULL;
+      void *pos = NULL;
 
-      void *csr_result;
-      void *fp_result;
+      void *csr_result = NULL;
+      void *fp_result = NULL;
 
       int resize = iter.numel();
       fn_memorymanager.set_numel(tid, iter.numel());
@@ -484,6 +485,9 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
         fn_memorymanager.p2p_free((void *)nz_pos, pos_elements * sizeof(unsigned int));
       } else {
         fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
+
+        fn_memorymanager.set_bit_addr(tid, NULL);
+        fn_memorymanager.set_pos_addr(tid, NULL);
 
         cudaMemcpyAsync((void *)csr_result, (void *)src, iter.numel() * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
       }
