@@ -179,6 +179,8 @@ void FlashNeuronEngine::offloading_scheduler(double freeSize) {
 
   last_time_slot += liveness_time[NUM_TENSOR - 1];
 
+  std::cout << "last time: " << last_time_slot << std::endl;
+
   for (int i = 0; i < NUM_TENSOR; i++) {
     if (at::native::fn_memorymanager.is_using_ssd())
       real_trans_time[i] = liveness_size[i] * 1000 / ssd_w;
@@ -354,6 +356,9 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
   // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
 
   if (at::native::fn_memorymanager.liveness_result[tid] == false && !at::globalContext().FNGlobal.isOnDemand()) {
+    if (at::native::fn_memorymanager.is_debug())
+      std::cout << "Offload try but not target: " << tid << std::endl;
+
     *fetch_loc = SavedVariable(t, isOutput);
     return;
   }
@@ -370,16 +375,16 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
   }
 
   if (at::globalContext().FNGlobal.isOnDemand() && at::globalContext().FNGlobal.isForward()) {
-    double elapsed = 0;
+    float elapsed = 0;
     if (accumSize > 0) {
-      gettimeofday(&at::native::fn_memorymanager.tv2, NULL);
-      elapsed = (at::native::fn_memorymanager.tv2.tv_sec - at::native::fn_memorymanager.tv1.tv_sec) * 1000 +
-        (double)(at::native::fn_memorymanager.tv2.tv_usec - at::native::fn_memorymanager.tv1.tv_usec) / 1000;
+      elapsed = at::native::fn_memorymanager.timeEnd();
+
+      std::cout << "elapsed: " << elapsed << std::endl;
     }
 
     accumSize += (double)t.nbytes() / 1024 / 1024;
 
-    liveness_time[tid] = elapsed;
+    liveness_time[oid] += elapsed;
     liveness_size[tid] = (double)t.nbytes() / 1024 / 1024;
 
     if (at::native::fn_memorymanager.is_csr())
@@ -444,21 +449,19 @@ void FlashNeuronEngine::offLoad(at::Tensor t, Oid oid, SavedVariable* fetch_loc,
   }
 
 
-  if (at::native::fn_memorymanager.is_using_ssd())
+//  if (at::native::fn_memorymanager.is_using_ssd())
 //    at::native::fn_memorymanager.Arcp2pCompletion(false);
 
   // csg.reset_stream(csg.original_stream());
 
   if (at::globalContext().FNGlobal.isOnDemand() && at::globalContext().FNGlobal.isForward()) {
-    gettimeofday(&at::native::fn_memorymanager.tv1, NULL);
+    at::native::fn_memorymanager.timeStart();
   }
 }
 
 void FlashNeuronEngine::joinOffload() {
   if (at::globalContext().FNGlobal.isOnDemand()) {
-    gettimeofday(&at::native::fn_memorymanager.tv2, NULL);
-    last_time_slot = (at::native::fn_memorymanager.tv2.tv_sec - at::native::fn_memorymanager.tv1.tv_sec) * 1000 +
-      (double)(at::native::fn_memorymanager.tv2.tv_usec - at::native::fn_memorymanager.tv1.tv_usec) / 1000;
+    last_time_slot = at::native::fn_memorymanager.timeEnd();
   }
 }
 
@@ -606,7 +609,7 @@ void FlashNeuronEngine::insertToPFDict_(Oid oid, SavedVariable* loc, Tid tid) {
   }
 }
 
-void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
+void FlashNeuronEngine::dropTensor(Oid oid) {
   if (op_tensor_list.find(oid) == op_tensor_list.end()) {
     return;
   }
@@ -614,6 +617,7 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
   auto fetch_vec = op_tensor_list[oid];
   for (auto it = fetch_vec.begin(); it != fetch_vec.end(); it++) {
     auto tid = it->second;
+    std::cout <<  "dropTensor try: " << tid << std::endl;
 
     if (at::globalContext().FNGlobal.isOnDemand()) {
       at::Tensor& tref = target_tensor[tid];
@@ -623,6 +627,11 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
       opt = opt.pinned_memory(true);
 
       while (at::native::fn_memorymanager.event_arr_h2d[tid]) {
+        if (at::native::fn_memorymanager.is_debug()) {
+          std::cout << "dropTensor event_arr_h2d: " <<  tid << std::endl;
+          break;
+        }
+
         if (at::native::fn_memorymanager.is_using_ssd()) {
 //          at::native::fn_memorymanager.Arcp2pCompletion(false);
         }
@@ -636,10 +645,15 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
 */
       }
 
-      tref = tref.FN_to(opt, false, true, false, c10::MemoryFormat::Contiguous);
+      tref = tref.FN_to(opt, false, false, true, c10::MemoryFormat::Contiguous);
       prefetch_sync[tid] = false;
 
       while (at::native::fn_memorymanager.event_arr_d2h[tid]) {
+        if (at::native::fn_memorymanager.is_debug()) {
+          std::cout << "dropTensor event_arr_d2h: " <<  tid << std::endl;
+          break;
+        }
+
         if (at::native::fn_memorymanager.is_using_ssd()) {
 //          at::native::fn_memorymanager.Arcp2pCompletion(false);
         }
@@ -648,7 +662,7 @@ void FlashNeuronEngine::dropTensor(Oid oid, SavedVariable* fetch_loc) {
       // int cur_back_num = at::globalContext().FNGlobal.curBackNum();
       if ((oid == last_use_backward[tid]) && target_tensor_valid[tid]) {
         target_tensor_valid[tid] = false;
-        fetch_loc->reset_data();
+        it->first->reset_data();
         c10::cuda::CUDACachingAllocator::emptyCache();
 
         if (at::native::fn_memorymanager.is_debug())

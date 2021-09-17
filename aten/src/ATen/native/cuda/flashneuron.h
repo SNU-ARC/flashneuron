@@ -128,8 +128,8 @@ class FN_memory {
   bool is_debug();
 
   float runTime;
-  void kernelTimeStart();
-  float* kernelTimeEnd();
+  void timeStart();
+  float timeEnd();
 
   int* pref_it;
   int pref_end;

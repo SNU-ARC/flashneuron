@@ -94,7 +94,7 @@ struct FlashNeuronEngine{
 
     static void resetCppEngine();
 
-    static void dropTensor(Oid oid, SavedVariable* fetch_loc);
+    static void dropTensor(Oid oid);
 
     static void joinOffload();
 

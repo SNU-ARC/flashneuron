@@ -396,6 +396,39 @@ static PyObject * ${pycname}(PyObject* self_, PyObject* args, PyObject* kwargs)
     ${signatures}
   }, /*traceable=*/${traceable});
 
+  auto oid = at::globalContext().FNGlobal.getNewOid();
+  if (at::globalContext().FNGlobal.isDebugMode()) {
+    std::cout << "OPERATION ${name}, OPID: " << oid << std::endl;
+  }
+
+  ParsedArgs<${max_args}> parsed_args;
+  auto _r = parser.parse(${self_}, args, kwargs, parsed_args);
+  ${check_has_torch_function}
+
+  switch (_r.idx) {
+    ${dispatch}
+  }
+  ${method_footer}
+}
+
+""")
+
+PY_VARIABLE_METHOD_VARARGS_NO_OID = CodeTemplate(r"""\
+// ${name}
+static PyObject * ${pycname}(PyObject* self_, PyObject* args, PyObject* kwargs)
+{
+  ${method_header}
+  static PythonArgParser parser({
+    ${signatures}
+  }, /*traceable=*/${traceable});
+
+/*
+  auto oid = at::globalContext().FNGlobal.getNewOid();
+  if (at::globalContext().FNGlobal.isDebugMode()) {
+    std::cout << "OPERATION ${name}, OPID: " << oid << std::endl;
+  }
+*/
+
   ParsedArgs<${max_args}> parsed_args;
   auto _r = parser.parse(${self_}, args, kwargs, parsed_args);
   ${check_has_torch_function}
@@ -519,16 +552,24 @@ def method_impl(
             PY_VARIABLE_CASE.substitute(overload_index=overload_index, body=dispatch_body)
             if not is_singleton else dispatch_body)
 
+    str_name = str(name)
+
     if noarg:
         template = PY_VARIABLE_METHOD_NOARGS
     elif is_singleton:
-        str_name = str(name)
-        if str_name == "uniform_" or str_name == "_has_compatible_shallow_copy_type" or str_name == "permute" or str_name == "clone" or str_name == "stack" or str_name == "zeros_like" or str_name == "mul_":
+        if str_name == "uniform_" or str_name == "_has_compatible_shallow_copy_type" or str_name == "permute" or \
+           str_name == "clone" or str_name == "stack" or str_name == "zeros_like" or str_name == "mul_":
             template = PY_VARIABLE_METHOD_VARARGS_SINGLETON_NO_OID
         else:
             template = PY_VARIABLE_METHOD_VARARGS_SINGLETON
     else:
-        template = PY_VARIABLE_METHOD_VARARGS
+        if str_name == "empty" or str_name == "random_" or str_name == "randperm" or str_name == "zeros" or \
+           str_name == "view" or str_name == "div" or str_name == "eq" or str_name == "any" or str_name == "sub_" or \
+           str_name == "div_" or str_name == "flatten" or str_name == "add" or str_name == "add_" or \
+           str_name == "addcmul_" :
+            template = PY_VARIABLE_METHOD_VARARGS_NO_OID
+        else:
+            template = PY_VARIABLE_METHOD_VARARGS
 
     return template.substitute(
         name=name,

@@ -935,6 +935,7 @@ void FN_memory::Arcp2pSynchronize() {
 }
 */
 
+/*
 void FN_memory::kernelTimeStart() {
   if (isTimer) {
     auto str = c10::cuda::getStreamFromPool(false, 0);
@@ -955,4 +956,18 @@ float* FN_memory::kernelTimeEnd() {
   }
   return &runTime;
 }
+*/
+
+void FN_memory::timeStart() {
+  cudaEventRecord(startEvent);
+}
+
+float FN_memory::timeEnd() {
+  cudaEventRecord(endEvent);
+  cudaEventSynchronize(endEvent);
+  cudaEventElapsedTime(&runTime, startEvent, endEvent);
+
+  return runTime;
+}
+
 }}

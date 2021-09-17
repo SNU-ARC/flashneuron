@@ -172,7 +172,6 @@ def process_function(info: DifferentiabilityInfo, template: CodeTemplate) -> str
             release_variables.append(f'{name}_.reset_grad_function();')
             ptr = 'shared_from_this()' if is_output else ''
             unpack.append(f'auto {name} = {name}_.unpack({ptr});')
-            fn_droptensors.append(f'FlashNeuronEngine::dropTensor(this->getOid(), &{name}_);')
         elif var.type == 'TensorList':
             saved_variables.append(f'std::vector<SavedVariable> {name}_;')
             saved_variables.append(f'bool {name}_released_ = false;')
@@ -276,6 +275,7 @@ def process_function(info: DifferentiabilityInfo, template: CodeTemplate) -> str
     else:
         superclass = 'TraceableFunction'
 
+    fn_droptensors.append(f'FlashNeuronEngine::dropTensor(this->getOid());')
     body.extend(fn_droptensors);
 
     return template.substitute(
