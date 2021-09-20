@@ -784,24 +784,10 @@ bool FN_memory::Arcp2pReqEmpty() {
 */
 
 // completion
-void FN_memory::Arcp2pCompletion(bool prefCall) {
+void FN_memory::Arcp2pCompletion() {
 
-  // Automatically prefetch
-  if(!at::globalContext().FNGlobal.isOnDemand()) {
-    if ((pref_end >= pref_idx) && prefCall) {
-      if (isDebug) {
-        std::cout << "Prefetching oid call: " << pref_it[pref_idx] << std::endl;
-      }
-      // bool d2h_finish = torch::autograd::FlashNeuronEngine::preFetch(pref_it[pref_idx]);
-      bool d2h_finish = true;
-      if (d2h_finish) {
-        pref_idx++;
-      }
-    }
-  }
-
-/*
   if(isUsingSSD) {
+/*
     // if req_list empty, nothing to do
     if (req_queue.empty()) {
       return;
@@ -925,36 +911,13 @@ void FN_memory::Arcp2pCompletion(bool prefCall) {
         }
       }
     }
-  }
 */
+  }
 }
 
 /*
 void FN_memory::Arcp2pSynchronize() {
   arcp2p_synchronize(arc_handle);
-}
-*/
-
-/*
-void FN_memory::kernelTimeStart() {
-  if (isTimer) {
-    auto str = c10::cuda::getStreamFromPool(false, 0);
-    c10::cuda::CUDAStreamGuard csg(str);
-    cudaEventRecord(startEvent, csg.original_stream());
-  }
-}
-
-float* FN_memory::kernelTimeEnd() {
-  if (isTimer) {
-    auto str = c10::cuda::getStreamFromPool(false, 0);
-    c10::cuda::CUDAStreamGuard csg(str);
-    cudaEventRecord(endEvent, csg.original_stream());
-    cudaEventSynchronize(endEvent);
-    cudaEventElapsedTime(&runTime, startEvent, endEvent);
-  } else {
-    runTime = -1;
-  }
-  return &runTime;
 }
 */
 

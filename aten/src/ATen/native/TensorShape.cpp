@@ -727,6 +727,7 @@ Tensor sum_to_size(const Tensor& self, IntArrayRef size) {
 // We currently do not support per-channel quant for unfold, diagonal, expand, permute.
 // TODO: Make this an aten function and replace as_strided_qtensorimpl once that is done.
 Tensor make_qtensor(const Tensor& self, IntArrayRef size, IntArrayRef stride, QuantizerPtr quantizer) {
+  std::cout << "make_qtensor" << std::endl;
   auto result = detail::make_tensor<QTensorImpl>(
       Storage(self.storage()), self.key_set(), self.dtype(), quantizer);
   setStrided(result, size, stride, self.storage_offset());
@@ -734,6 +735,7 @@ Tensor make_qtensor(const Tensor& self, IntArrayRef size, IntArrayRef stride, Qu
 }
 
 Tensor as_strided_tensorimpl(const Tensor& self, IntArrayRef size, IntArrayRef stride, optional<int64_t> storage_offset_) {
+  // std::cout << "as_strided_tensorimpl" << std::endl;
   auto storage_offset = storage_offset_.value_or(self.storage_offset());
   auto result = detail::make_tensor<TensorImpl>(
       Storage(self.storage()), self.key_set(), self.dtype());
@@ -742,6 +744,7 @@ Tensor as_strided_tensorimpl(const Tensor& self, IntArrayRef size, IntArrayRef s
 }
 
 Tensor as_strided_qtensorimpl(const Tensor& self, IntArrayRef size, IntArrayRef stride, optional<int64_t> storage_offset_) {
+  std::cout << "as_strided_qtensorimpl" << std::endl;
   auto storage_offset = storage_offset_.value_or(self.storage_offset());
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(

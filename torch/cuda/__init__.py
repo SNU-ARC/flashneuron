@@ -35,6 +35,9 @@ _device_t = Union[_device, str, int, None]
 def fn_setting(flags: int):
     return torch._C._cuda_fn_setting(flags)
 
+def fn_reset():
+    return torch._C._cuda_fn_reset()
+
 # Define dummy _CudaDeviceProperties type if PyTorch was compiled without CUDA
 if hasattr(torch._C, '_CudaDeviceProperties'):
     _CudaDeviceProperties = torch._C._CudaDeviceProperties

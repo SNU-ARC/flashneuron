@@ -222,6 +222,8 @@ Tensor view_dtype(const Tensor& self, ScalarType dtype) {
   TORCH_CHECK(self.element_size() == type_meta.itemsize(),
     "Viewing a tensor as a new dtype with a different number of bytes per element is not supported.");
   Storage storage = self.storage();
+
+  std::cout << "view_dtype" << std::endl;
   auto new_tensor = detail::make_tensor<TensorImpl>(
       std::move(storage), self.key_set(), type_meta);
   auto* impl = new_tensor.unsafeGetTensorImpl();

@@ -116,7 +116,7 @@ class FN_memory {
 //  int  Arcp2pBarMapping(uint64_t, uint64_t);
 //  void Arcp2pSubmission(uint64_t, uint64_t, uint64_t *, arcp2p_cpl *, arcp2p_dir, c10::Storage *, arcp2p_info *, cudaStream_t);
 //  bool Arcp2pReqEmpty();
-  void Arcp2pCompletion(bool prefCall);
+  void Arcp2pCompletion();
 //  void Arcp2pSynchronize();
 
   // Flag check
@@ -130,10 +130,6 @@ class FN_memory {
   float runTime;
   void timeStart();
   float timeEnd();
-
-  int* pref_it;
-  int pref_end;
-  int pref_idx;
 
   int on_the_fly;
 

@@ -45,11 +45,16 @@ variable_list ${op}::apply(variable_list&& grads) {
 
   if (at::native::fn_memorymanager.is_debug())
     std::cout << "Operation type: ${op}, " << this->getOid() << std::endl;
+ 
+  if (at::native::fn_memorymanager.is_fn()) {
+    if (at::globalContext().FNGlobal.isOnDemand()) {
+      // FlashNeuronEngine::preFetch(this->getOid());
+      FNEngine.preFetch(this->getOid());
+    }
 
-  if (at::globalContext().FNGlobal.isOnDemand()) {
-    FlashNeuronEngine::preFetch(this->getOid());
+    // FlashNeuronEngine::preFetchSync(this->getOid());
+    FNEngine.preFetchSync(this->getOid());
   }
-  FlashNeuronEngine::preFetchSync(this->getOid());
 
   IndexRangeGenerator gen;
   ${compute_index_ranges}
@@ -57,7 +62,13 @@ variable_list ${op}::apply(variable_list&& grads) {
   ${body}
 
   if (at::native::fn_memorymanager.is_fn()) {
-    at::native::fn_memorymanager.Arcp2pCompletion(true);
+    if (at::native::fn_memorymanager.is_using_ssd()) {
+      at::native::fn_memorymanager.Arcp2pCompletion();
+    }
+
+    if (at::native::fn_memorymanager.is_fn() && !at::globalContext().FNGlobal.isOnDemand()) {
+      FNEngine.preFetch(-1);
+    }
   }
 
   return grad_inputs;
@@ -275,7 +286,8 @@ def process_function(info: DifferentiabilityInfo, template: CodeTemplate) -> str
     else:
         superclass = 'TraceableFunction'
 
-    fn_droptensors.append(f'FlashNeuronEngine::dropTensor(this->getOid());')
+    fn_droptensors.append(f'// FlashNeuronEngine::dropTensor(this->getOid());')
+    fn_droptensors.append(f'FNEngine.dropTensor(this->getOid());')
     body.extend(fn_droptensors);
 
     return template.substitute(

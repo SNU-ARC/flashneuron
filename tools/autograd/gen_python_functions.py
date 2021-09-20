@@ -943,11 +943,8 @@ auto dispatch_{name} = []({lambda_formals}) -> {lambda_return} {{
 }};
 auto output = {namedtuple_typeref}dispatch_{name}({lambda_args}){set_requires_grad};
 
-if (at::globalContext().FNGlobal.getTid(output) == 0)
-  at::globalContext().FNGlobal.setNewTid(output);
-
-if (at::native::fn_memorymanager.is_using_ssd())
-  at::native::fn_memorymanager.Arcp2pCompletion(false);
+if (at::native::fn_memorymanager.is_fn() && at::native::fn_memorymanager.is_using_ssd())
+  at::native::fn_memorymanager.Arcp2pCompletion();
 
 return wrap(output);
 """
@@ -961,8 +958,8 @@ auto dispatch_{name} = []({lambda_formals}) -> {lambda_return} {{
 }};
 auto output = {namedtuple_typeref}dispatch_{name}({lambda_args}){set_requires_grad};
 
-if (at::native::fn_memorymanager.is_using_ssd())
-  at::native::fn_memorymanager.Arcp2pCompletion(false);
+if (at::native::fn_memorymanager.is_fn() && at::native::fn_memorymanager.is_using_ssd())
+  at::native::fn_memorymanager.Arcp2pCompletion();
 
 return wrap(output);
 """

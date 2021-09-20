@@ -196,8 +196,8 @@ ${return_type} ${type_wrapper_name}(${formals}) ;
 METHOD_DEFINITION = CodeTemplate("""\
 ${return_type} ${type_wrapper_name}(${formals}) {
 
-//  if (at::native::fn_memorymanager.is_debug())
-//    std::cout << "Micro op: ${type_wrapper_name}" << std::endl;
+  // if (at::native::fn_memorymanager.is_debug())
+  //   std::cout << "Micro op: ${type_wrapper_name}" << std::endl;
 
   ${type_definition_body}
 }
@@ -675,17 +675,19 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
                     if arg.type == 'c10::optional<Tensor>' or arg.type == 'c10::optional<Tensor>&':
                         stmts.append(f'grad_fn->{name} = {expr};')
                     else:
-                        offload_stmts.append('if (at::globalContext().FNGlobal.isForward()) {')
-                        offload_stmts.append(f'  FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                        offload_stmts.append('if (at::native::fn_memorymanager.is_fn() && at::globalContext().FNGlobal.isForward()) {')
+                        offload_stmts.append(f'  // FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                        offload_stmts.append(f'  FNEngine.offLoad({var}, oid, &(grad_fn->{name}), false);')
                         offload_stmts.append('  grad_fn->setOid(oid);')
                         offload_stmts.append('} else {')
                         offload_stmts.append(f'  grad_fn->{name} = {expr};')
                         offload_stmts.append('}')
                 else:
                     if relu_flag:
-                        offload_stmts.append('if (at::globalContext().FNGlobal.isForward()) {')
+                        offload_stmts.append('if (at::native::fn_memorymanager.is_fn() && at::globalContext().FNGlobal.isForward()) {')
                         offload_stmts.append('  at::native::fn_memorymanager.relu_thru = true;')
-                        offload_stmts.append(f'  FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                        offload_stmts.append(f'  // FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                        offload_stmts.append(f'  FNEngine.offLoad({var}, oid, &(grad_fn->{name}), false);')
                         offload_stmts.append('  grad_fn->setOid(oid);')
                         offload_stmts.append('} else {')
                         offload_stmts.append(f'  grad_fn->{name} = {expr};')
@@ -700,8 +702,9 @@ def emit_body(fn: NativeFunctionWithDifferentiabilityInfo) -> List[str]:
                 stmts.append(f'if ({guard}) {{')
                 offload_stmts.append(f'if ({guard}) {{')
                 if not is_output and not (var == 'weight') and not (var == 'bias'):
-                    offload_stmts.append('  if (at::globalContext().FNGlobal.isForward()) {')
-                    offload_stmts.append(f'    FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                    offload_stmts.append('  if (at::native::fn_memorymanager.is_fn() && at::globalContext().FNGlobal.isForward()) {')
+                    offload_stmts.append(f'    // FlashNeuronEngine::offLoad({var}, oid, &(grad_fn->{name}), false);')
+                    offload_stmts.append(f'    FNEngine.offLoad({var}, oid, &(grad_fn->{name}), false);')
                     offload_stmts.append('    grad_fn->setOid(oid);')
                     offload_stmts.append('  } else {')
                     offload_stmts.append(f'    grad_fn->{name} = {expr};')

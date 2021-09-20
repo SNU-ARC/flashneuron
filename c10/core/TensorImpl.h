@@ -1841,7 +1841,7 @@ protected:
 
 // FlashNeuron-managed tensor ID
 public:
-  int tensor_id = 0;
+  int tensor_id = -1;
 };
 
 // Note [TensorImpl size constraints]

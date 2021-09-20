@@ -853,18 +853,16 @@ auto Engine::execute(const edge_list& roots,
                      const edge_list& outputs) -> variable_list {
   // Wait until all SSD commands are finished
   at::globalContext().FNGlobal.endForward();
-  FlashNeuronEngine::joinOffload();
+  // FlashNeuronEngine::joinOffload();
+  FNEngine.joinOffload();
   c10::cuda::CUDACachingAllocator::emptyCache();
 
   if (at::globalContext().FNGlobal.isDebugMode())
     std::cout << "================Forward end===================" << std::endl;
 
   if (!at::globalContext().FNGlobal.isOnDemand()) {
-    at::native::fn_memorymanager.pref_it = at::globalContext().FNGlobal.getBackPath();
-    at::native::fn_memorymanager.pref_end = at::globalContext().FNGlobal.getLastIdx();
-    at::native::fn_memorymanager.pref_idx = 0;
-
-    at::native::fn_memorymanager.Arcp2pCompletion(true);
+//    at::native::fn_memorymanager.Arcp2pCompletion();
+    FNEngine.preFetch(-1);
   }
 
   size_t freeBytes;
@@ -928,12 +926,14 @@ auto Engine::execute(const edge_list& roots,
   if (at::globalContext().FNGlobal.isOnDemand() && !at::native::fn_memorymanager.hard_training) {
     double remainSize = 0;
     if (at::native::fn_memorymanager.is_fn()) {
-      FlashNeuronEngine::offloading_scheduler((double)freeBytes / 1024 / 1024 * 0.6);
+      // FlashNeuronEngine::offloading_scheduler((double)freeBytes / 1024 / 1024 * 0.6);
+      FNEngine.offloading_scheduler((double)freeBytes / 1024 / 1024 * 0.6);
     }
   }
 
   // Reset global ids
-  FlashNeuronEngine::resetCppEngine();
+  // FlashNeuronEngine::resetCppEngine();
+  FNEngine.resetCppEngine();
 
   // let forward start again and turn off on demand mode if it's still on.
   at::globalContext().FNGlobal.startForward();

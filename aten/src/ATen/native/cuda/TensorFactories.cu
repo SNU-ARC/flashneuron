@@ -73,6 +73,9 @@ Tensor empty_cuda(IntArrayRef size, c10::optional<ScalarType> dtype_opt, c10::op
 
   auto memory_format = memory_format_opt.value_or(MemoryFormat::Contiguous);
   tensor.unsafeGetTensorImpl()->empty_tensor_restride(memory_format);
+
+  at::globalContext().FNGlobal.setNewTid(tensor);
+
   return tensor;
 }
 
@@ -105,13 +108,14 @@ Tensor FNempty_cuda(IntArrayRef size, c10::optional<ScalarType> dtype_opt, c10::
 
   auto memory_format = memory_format_opt.value_or(MemoryFormat::Contiguous);
   tensor.unsafeGetTensorImpl()->empty_tensor_restride(memory_format);
+
+  at::globalContext().FNGlobal.setNewTid(tensor);
+
   return tensor;
 }
 
 Tensor empty_strided_cuda(IntArrayRef size, IntArrayRef stride, c10::optional<ScalarType> dtype_opt, c10::optional<Layout> layout_opt, c10::optional<Device> device_opt, c10::optional<bool> pin_memory_opt) {
-  int newTid = ++fn_memorymanager.global_tensor_id_;
   auto t = at::native::empty_cuda({0}, dtype_opt, layout_opt, device_opt, pin_memory_opt);
-  t.unsafeGetTensorImpl()->tensor_id = newTid;
 
   at::native::resize_impl_cuda_(t.unsafeGetTensorImpl(), size, stride);
   return t;
@@ -140,6 +144,7 @@ Tensor& randperm_out_cuda(Tensor& result, int64_t n, c10::optional<Generator> ge
   }
 #endif
 
+  std::cout << "randperm_out_cuda" << std::endl;
   // Generate random values for the keys array
   AT_DISPATCH_ALL_TYPES(
     result.scalar_type(), "randperm_out_cuda", [&] {

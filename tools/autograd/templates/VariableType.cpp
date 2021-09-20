@@ -3,6 +3,10 @@
 
 #include <torch/library.h>
 
+#include <ATen/native/cuda/flashneuron.h>
+
+// #include "torch/csrc/autograd/saved_variable.h"
+
 // ${generated_comment}
 
 // NOTE [Sharded File]: on this file's split-into-shards state

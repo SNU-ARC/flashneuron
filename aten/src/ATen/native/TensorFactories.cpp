@@ -1070,6 +1070,7 @@ Tensor from_file(std::string filename, c10::optional<bool> shared, c10::optional
             filename.c_str(), flags, size_bytes, nullptr),
         /*allocator=*/nullptr,
         /*resizable=*/false);
+    std::cout << "from file" << std::endl;
     auto tensor = detail::make_tensor<at::TensorImpl>(
         storage_impl, at::DispatchKey::CPU, dtype);
     tensor.unsafeGetTensorImpl()->set_sizes_contiguous({my_size});

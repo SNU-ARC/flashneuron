@@ -332,14 +332,14 @@ std::tuple<Tensor,Tensor>
 fused_dropout_cuda(const Tensor& self, double p, c10::optional<Generator> gen_){
   auto gen = get_generator_or_default<CUDAGeneratorImpl>(gen_, cuda::detail::getDefaultCUDAGenerator());
 
-  int newTid = ++fn_memorymanager.global_tensor_id_;
+  // int newTid = ++fn_memorymanager.global_tensor_id_;
   Tensor ret = at::empty_like(self);
-  ret.unsafeGetTensorImpl()->tensor_id = newTid;
+  // ret.unsafeGetTensorImpl()->tensor_id = newTid;
 
-  newTid = ++fn_memorymanager.global_tensor_id_;
+  int newTid = fn_memorymanager.global_tensor_id_ + 1;
   Tensor mask = fn_memorymanager.liveness_result[newTid] ?
           at::FNempty(self.sizes(), self.options().dtype(kByte)) : at::empty(self.sizes(), self.options().dtype(kByte));
-  mask.unsafeGetTensorImpl()->tensor_id = newTid;
+  // mask.unsafeGetTensorImpl()->tensor_id = newTid;
 
   const int64_t nelem = self.numel();
 //empty tensors should not get here, but just in case, avoid FPE

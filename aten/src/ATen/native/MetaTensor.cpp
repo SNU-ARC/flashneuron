@@ -15,6 +15,7 @@ Tensor empty_meta(
 ) {
   // TODO: deduplicate this logic with empty_cpu
 
+  std::cout << "empty_meta" << std::endl;
   auto tensor = detail::make_tensor<TensorImpl>(
     // NB: We include the computed dispatch key, not because it will actually
     // participate in dispatch, but so that tests like is_sparse/is_cuda

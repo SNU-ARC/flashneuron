@@ -284,8 +284,8 @@ static int global_operation_id_ = 0;
 static bool on_debug_mode_ = 0;
 static bool on_demand_mode_ = 1; // default 1. Set 0 after first iteration(Profiling Stage)
 static bool on_forwarding_ = 1; // 1 in forwarding phase. 0 in backprop. phase
-static Oid back_path_[NUM_OP] = {0};
-static int back_path_idx = -1;
+static Oid backward_order[NUM_OP] = {0};
+static int backward_order_idx = -1;
 
 static auto offload_stream = c10::cuda::getStreamFromPool(false, 0);
 static auto prefetch_stream = offload_stream;//c10::cuda::getStreamFromPool(false, 0);
@@ -310,12 +310,6 @@ void Context::FNGlobalContext::updateTid(Tensor& t, int tid) { t.unsafeGetTensor
 
 void Context::FNGlobalContext::resetGlobalTid() {
   at::native::fn_memorymanager.global_tensor_id_ = 0;
-/*
-  if (bert)
-    at::native::fn_memorymanager.global_tensor_id_ = 2;
-  else
-    at::native::fn_memorymanager.global_tensor_id_ = 0;
-*/
 }
 
 Oid Context::FNGlobalContext::getCurOid() { return global_operation_id_; }
@@ -355,20 +349,19 @@ bool Context::FNGlobalContext::isOnDemand() { return on_demand_mode_; }
 bool Context::FNGlobalContext::isDebugMode() { return on_debug_mode_; }
 void Context::FNGlobalContext::turnOnDebugMode() { on_debug_mode_ = 1; }
 
-void Context::FNGlobalContext::pushBackOid(Oid oid) {
+void Context::FNGlobalContext::pushBackwardOrder(Oid oid) {
   if (!on_demand_mode_) std::cerr << "Illegal call: not on-demand mode" << std::endl;
 
   // int idx = ++back_path_idx[at::native::fn_memorymanager.cur_back_num];
-  back_path_[++back_path_idx] = oid;
+  backward_order[++backward_order_idx] = oid;
 }
 
-//std::vector<Oid> Context::FNGlobalContext::getBackPath() {
-int* Context::FNGlobalContext::getBackPath() {
-  return back_path_;
+Oid* Context::FNGlobalContext::getBackwardOrder() {
+  return backward_order;
 };
 
-int Context::FNGlobalContext::getLastIdx() {
-  return back_path_idx;
+int Context::FNGlobalContext::getBackwardLastIdx() {
+  return backward_order_idx;
 };
 
 } // namespace at

@@ -222,9 +222,9 @@ class TORCH_API Context {
     Oid getNewOid();
     void resetGlobalOid();
     // dictionary, vector manipulation API
-    void pushBackOid(Oid oid); // must be called only in on-demand mode
-    int* getBackPath();
-    int getLastIdx();
+    void pushBackwardOrder(Oid oid); // must be called only in on-demand mode
+    int* getBackwardOrder();
+    int getBackwardLastIdx();
 
     // set flags
     void startForward();

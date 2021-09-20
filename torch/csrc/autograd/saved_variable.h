@@ -81,15 +81,16 @@ using PFInfo=std::pair<SavedVariable*, Tid>; // information required in prefetch
 
 // FlashNeuron Engine
 // support async prefetching, offloading operation
-struct FlashNeuronEngine{
+struct FlashNeuronEngine {
 
   public:
     static void offloading_scheduler(double freeSize);
 
     // basic fetch/offload operation
     static void offLoad(at::Tensor t, Oid curOid, SavedVariable* fetch_loc, bool isOutput);
+
     // prefetching at curOid
-    static bool preFetch(Oid oid);
+    static bool preFetch(int oid);
     static void preFetchSync(Oid curOid, bool isOutput=false);
 
     static void resetCppEngine();
@@ -102,5 +103,7 @@ struct FlashNeuronEngine{
     static void insertToPFDict_(Oid oid, SavedVariable* loc, Tid tid);
 
 }; // struct FlashNeuronEngine
+
+extern FlashNeuronEngine FNEngine;
 
 }} // namespace torch::autograd

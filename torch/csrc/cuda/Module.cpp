@@ -544,6 +544,15 @@ PyObject * THCPModule_FNSetting(PyObject *_unused, PyObject *arg)
   END_HANDLE_TH_ERRORS
 }
 
+PyObject * THCPModule_FNReset(PyObject *_unused, PyObject *noargs)
+{
+  HANDLE_TH_ERRORS
+  at::globalContext().FNGlobal.resetGlobalOid();
+  at::globalContext().FNGlobal.resetGlobalTid();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
 static struct PyMethodDef _THCPModule_methods[] = {
   {"_cuda_init",        THCPModule_initExtension,    METH_NOARGS,  nullptr},
   {"_cuda_setDevice",   THCPModule_setDevice_wrap,   METH_O,       nullptr},
@@ -575,6 +584,7 @@ static struct PyMethodDef _THCPModule_methods[] = {
   {"_cuda_lock_mutex",   THCPModule_cudaLockMutex,   METH_NOARGS,  nullptr},
   {"_cuda_unlock_mutex", THCPModule_cudaUnlockMutex, METH_NOARGS,  nullptr},
   {"_cuda_fn_setting", (PyCFunction)THCPModule_FNSetting, METH_O, nullptr},
+  {"_cuda_fn_reset", (PyCFunction)THCPModule_FNReset, METH_NOARGS, nullptr},
 #ifdef USE_NCCL
   {"_nccl_version", THCPModule_nccl_version, METH_NOARGS, nullptr},
   {"_nccl_unique_id", THCPModule_nccl_unique_id, METH_NOARGS, nullptr},

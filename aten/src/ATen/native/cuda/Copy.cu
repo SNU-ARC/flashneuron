@@ -408,30 +408,6 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
 
   fn_memorymanager.set_elem(tid, iter.element_size(0));
 
-  if (true == ssd_flag) {
-/*
-    if (!fn_memorymanager.mapping) {
-      // [TODO] this should be called only for Tesla option enabled
-      void* deviceAddr = fn_memorymanager.get_device_addr();
-      uint64_t deviceSz = fn_memorymanager.get_device_sz();
-      fn_memorymanager.Arcp2pBarMapping((uint64_t)deviceAddr, deviceSz);
-      fn_memorymanager.mapping = true;
-    }
-*/
-  }
-
-  size_t bit_elements, pos_elements, pos_elements_before;
-
-  if (csr_flag) {
-    bit_elements = (size_t)((iter.numel() + 1024 - 1) / 1024) * 32;
-    pos_elements_before = (size_t)((iter.numel() + 32 - 1) / 32);
-    int count = 0;
-    while (pos_elements_before != 0) {
-      pos_elements_before = pos_elements_before >> 1;  count++;
-    }
-    pos_elements = 1 << count;
-  }
-
   if (kind == cudaMemcpyDeviceToHost) {
     if (iter.element_size(0) >= 4) {
       void *bit = NULL;
@@ -443,10 +419,19 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
       int resize = iter.numel();
       fn_memorymanager.set_numel(tid, iter.numel());
 
-      fn_memorymanager.p2p_malloc((void **)&csr_result, iter.numel() * iter.element_size(0));
+      fn_memorymanager.p2p_malloc((void **)&csr_result, iter.element_size(0) * iter.numel());
       cudaMemsetAsync((void *)csr_result, 0, iter.numel() * iter.element_size(0), stream);
 
       if (csr_flag && is_csr) {
+        size_t bit_elements, pos_elements, pos_elements_before;
+        bit_elements = (size_t)((iter.numel() + 1024 - 1) / 1024) * 32;
+        pos_elements_before = (size_t)((iter.numel() + 32 - 1) / 32);
+        int count = 0;
+        while (pos_elements_before != 0) {
+          pos_elements_before = pos_elements_before >> 1;  count++;
+        }
+        pos_elements = 1 << count;
+
         fn_memorymanager.p2p_malloc(&bit, sizeof(unsigned int) * bit_elements);
         fn_memorymanager.p2p_malloc(&pos, sizeof(unsigned int) * pos_elements);
 
@@ -454,7 +439,7 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
         fn_memorymanager.set_pos_addr(tid, (uint64_t)pos);
 
         unsigned int *nz_pos;
-        fn_memorymanager.p2p_malloc((void **)&nz_pos, pos_elements * sizeof(unsigned int));
+        fn_memorymanager.p2p_malloc((void **)&nz_pos, sizeof(unsigned int) * pos_elements);
 
         cudaMemsetAsync((void *)bit, 0, sizeof(unsigned int) * bit_elements, stream);
         cudaMemsetAsync((void *)pos, 0, sizeof(unsigned int) * pos_elements, stream);
@@ -480,20 +465,19 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
 
         cudaMemcpyAsync((void *)&resize, (void *)((size_t)pos + sizeof(unsigned int) * (pos_elements - 1)),
             sizeof(int), cudaMemcpyDeviceToHost, stream);
-        fn_memorymanager.set_resize(tid, resize); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
+        fn_memorymanager.set_resize(tid, resize);
 
         fn_memorymanager.p2p_free((void *)nz_pos, pos_elements * sizeof(unsigned int));
       } else {
-        fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
+        fn_memorymanager.set_resize(tid, -1);
 
-        fn_memorymanager.set_bit_addr(tid, NULL);
-        fn_memorymanager.set_pos_addr(tid, NULL);
+        fn_memorymanager.set_bit_addr(tid, (uint64_t)NULL);
+        fn_memorymanager.set_pos_addr(tid, (uint64_t)NULL);
 
-        cudaMemcpyAsync((void *)csr_result, (void *)src, iter.numel() * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
+        cudaMemcpyAsync((void *)csr_result, (void *)src, iter.element_size(0) * iter.numel(), cudaMemcpyDeviceToDevice, stream);
       }
 
       if (fp16_flag) {
-        // keep print message for debug purpose
         fn_memorymanager.p2p_malloc(&fp_result, sizeof(__half) * resize);
         fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
 
@@ -502,22 +486,22 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
         } else {
           float_to_half<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((float *)csr_result, (__half *)fp_result, resize);
         }
-
-        fn_memorymanager.set_resize(tid, resize); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
       } else {
         fn_memorymanager.p2p_malloc(&fp_result, resize * iter.element_size(0));
-        cudaMemcpyAsync((void *)fp_result, (void *)csr_result, resize * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
-
         fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
-        // fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-        fn_memorymanager.set_numel(tid, nbytes);
+        cudaMemcpyAsync((void *)fp_result, (void *)csr_result, resize * iter.element_size(0), cudaMemcpyDeviceToDevice, stream);
       }
 
       fn_memorymanager.p2p_free((void *)csr_result, iter.numel() * iter.element_size(0));
 
       if (true == ssd_flag) {
         p2p_addr = (uint64_t)fp_result;
-        p2p_size = (uint64_t)(iter.numel() * sizeof(__half));
+
+        if (fp16_flag)
+          p2p_size = (uint64_t)(sizeof(__half) * resize);
+        else
+          p2p_size = (uint64_t)(iter.element_size(0) * resize);
+
       } else {
         if (fp16_flag) {
           AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp_result, resize * sizeof(__half), kind, stream));
@@ -530,24 +514,17 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
         fn_memorymanager.event_arr_d2h[tid] = false;
       }
     } else { // Non double or float
+      fn_memorymanager.set_resize(tid, -1);
+      fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
+
       if (true == ssd_flag) {
         // TODO Need to malloc src ptr to BAR attached region
-        void *fp_result;
-        fn_memorymanager.p2p_malloc(&fp_result, nbytes);
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
-        fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-        fn_memorymanager.set_numel(tid, (size_t)nbytes);
+        // AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, nbytes, cudaMemcpyDeviceToDevice, stream));
 
-        AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, nbytes, cudaMemcpyDeviceToDevice, stream));
-
-        p2p_addr = (uint64_t)fp_result;
-        p2p_size = (uint64_t)nbytes;
+        p2p_addr = (uint64_t)src;
+        p2p_size = (uint64_t)(iter.element_size(0) * iter.numel());
 
       } else {
-        fn_memorymanager.set_resize(tid, -1); // [TODO] slight hack code, we will distinguish CSR / FP16 by resize value
-        fn_memorymanager.set_numel(tid, iter.numel());
-        fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
-
         AT_CUDA_CHECK(cudaMemcpyAsync(dst, src, nbytes, kind, stream));
 
         fn_memorymanager.event_arr_d2h[tid] = false;
@@ -557,37 +534,37 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
 
   if (kind == cudaMemcpyHostToDevice) {
     int resize = fn_memorymanager.get_resize(tid);
+    if (resize == -1)
+        resize = iter.numel();
 
     void *fp_src = NULL;
     void *fp_result = NULL;
     void *csr_result = NULL;
 
     if (ssd_flag) {
-      if (iter.element_size(0) >= 4) {
 /*
+      if (iter.element_size(0) >= 4) {
         fn_memorymanager.p2p_malloc(&fp_result, resize * sizeof(__half));
         p2p_size = (uint64_t)(resize * sizeof(__half));
-*/
       } else {
-/*
         fn_memorymanager.p2p_malloc(&fp_result, nbytes);
         p2p_size = (uint64_t)nbytes;
-*/
       }
 
       p2p_addr = (uint64_t)fp_result;
       fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
+*/
     } else {
       if (iter.element_size(0) >= 4) {
+        fn_memorymanager.p2p_malloc(&fp_result, iter.element_size(0) * resize);
+        cudaMemsetAsync((void *)fp_result, 0, iter.element_size(0) * resize, stream);
+
+        fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
+
         if (fp16_flag) {
-          fn_memorymanager.p2p_malloc(&fp_src, resize * sizeof(__half));
+          fn_memorymanager.p2p_malloc(&fp_src, sizeof(__half) * resize);
           cudaMemsetAsync((void *)fp_src, 0, resize * sizeof(__half), stream);
-          cudaMemcpyAsync((void *)fp_src, (void *)src, iter.element_size(0) * sizeof(__half), kind, stream);
-
-          fn_memorymanager.p2p_malloc(&fp_result, iter.element_size(0) * resize);
-          cudaMemsetAsync((void *)fp_result, 0, iter.element_size(0) * resize, stream);
-
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)fp_result);
+          cudaMemcpyAsync((void *)fp_src, (void *)src, sizeof(__half) * resize, kind, stream);
 
           if (iter.element_size(0) == 8) {
             half_to_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp_src, (double *)fp_result, resize);
@@ -595,16 +572,12 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
             half_to_float<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((__half *)fp_src, (float *)fp_result, resize);
           }
         } else {
-          fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
-          AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, resize * iter.element_size(0), kind, stream));
+          AT_CUDA_CHECK(cudaMemcpyAsync(fp_result, src, iter.element_size(0) * resize, kind, stream));
         }
 
         if (csr_flag && is_csr) {
           void* bit = fn_memorymanager.get_bit_addr(tid);
           void* pos = fn_memorymanager.get_pos_addr(tid);
-
-          // fn_memorymanager.p2p_malloc(&csr_result, iter.numel() * iter.element_size(0));
-          // cudaMemsetAsync((void *)csr_result, 0, iter.numel() * iter.element_size(0), stream);
 
           if (iter.element_size(0) == 8) {
             zero_insert_double<<<(iter.numel() + nTPB - 1) / nTPB, nTPB, 0, stream>>>((unsigned int*)bit, (unsigned int*)pos, (double *)fp_result, (double *)dst, iter.numel());
@@ -615,9 +588,8 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
           AT_CUDA_CHECK(cudaMemcpyAsync(dst, fp_result, resize * iter.element_size(0), cudaMemcpyDeviceToDevice, stream));
         }
 
-        if (fp_result != NULL) {
+        if (fp_src != NULL) {
           fn_memorymanager.p2p_free(fp_src, sizeof(__half) * resize);
-          fn_memorymanager.p2p_free(fp_result, iter.element_size(0) * resize);
         }
       } else {
         fn_memorymanager.set_fp16_addr(tid, (uint64_t)NULL);
@@ -633,6 +605,16 @@ static void FN_copy_kernel_cuda(TensorIterator& iter, bool non_blocking, int tid
   }
 
   if (ssd_flag) {
+/*
+    if (!fn_memorymanager.mapping) {
+      // [TODO] this should be called only for Tesla option enabled
+      void* deviceAddr = fn_memorymanager.get_device_addr();
+      uint64_t deviceSz = fn_memorymanager.get_device_sz();
+      fn_memorymanager.Arcp2pBarMapping((uint64_t)deviceAddr, deviceSz);
+      fn_memorymanager.mapping = true;
+    }
+*/
+
 /*
     uint64_t *p_offs = fn_memorymanager.get_offset_ptr(tid);
     arcp2p_cpl *p_cpl = (arcp2p_cpl *)fn_memorymanager.get_cpl_addr(tid, dir);
