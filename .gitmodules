@@ -1,3 +1,36 @@
 [submodule "third_party/FP16"]
 	path = third_party/FP16
 	url = https://github.com/Maratyszcza/FP16.git
+[submodule "third_party/FXdiv"]
+	path = third_party/FXdiv
+	url = https://github.com/Maratyszcza/FXdiv.git
+[submodule "third_party/NNPACK"]
+	path = third_party/NNPACK
+	url = https://github.com/Maratyszcza/NNPACK.git
+[submodule "third_party/QNNPACK"]
+	path = third_party/QNNPACK
+	url = https://github.com/pytorch/QNNPACK.git
+[submodule "third_party/XNNPACK"]
+	path = third_party/XNNPACK
+	url = https://github.com/malfet/XNNPACK.git
+[submodule "third_party/benchmark"]
+	path = third_party/benchmark
+	url = https://github.com/google/benchmark.git
+[submodule "third_party/cpuinfo"]
+	path = third_party/cpuinfo
+	url = https://github.com/pytorch/cpuinfo.git
+[submodule "third_party/cub"]
+	path = third_party/cub
+	url = https://github.com/NVlabs/cub.git
+[submodule "third_party/eigen"]
+	path = third_party/eigen
+	url = https://github.com/eigenteam/eigen-git-mirror.git
+[submodule "third_party/fbgemm"]
+	path = third_party/fbgemm
+	url = https://github.com/pytorch/FBGEMM.git
+[submodule "third_party/fmt"]
+	path = third_party/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "third_party/foxi"]
+	path = third_party/foxi
+	url = https://github.com/houseroad/foxi.git
